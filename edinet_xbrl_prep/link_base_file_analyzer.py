@@ -18,7 +18,7 @@ from pydantic.functional_validators import BeforeValidator
 
 from pathlib import Path
 import requests
-
+from .xbrl_parser_rapper import *
 
 # %%
 StrOrNone = Annotated[str, BeforeValidator(lambda x: x or "")]
@@ -555,6 +555,71 @@ class get_label():
 #        return pd.DataFrame(columns=['label_lab','label_pre','lang','role','text'])
 
 
+class fs_tbl_loader():
+    def __init__(self,account_list_common_obj,docid,zip_file_str,temp_path_str):
+        self.linkbasefile_obj = linkbasefile(
+            zip_file_str=zip_file_str,
+            temp_path_str=temp_path_str
+            )
+        self.linkbasefile_obj.read_linkbase_file()
+        self.linkbasefile_obj.check()
+        self.linkbasefile_obj.make_account_label(account_list_common_obj)
+        self.docid = docid
+        self.xbrl_data_df,self.log_dict = get_xbrl_rapper(
+            docid=docid,
+            zip_file=zip_file_str,
+            temp_dir=DATA_PATH / "tmp",
+            out_path=temp_path_str,
+            update_flg=False)
+        self.cnt_dict = {
+            "cnt_current_non_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('CurrentYear') and (not context_ref.str.contains('NonConsolidated'))")),
+            "cnt_current_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('CurrentYear') and context_ref.str.contains('NonConsolidated')")),
+            "cnt_prior_non_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('Prior1Year') and (not context_ref.str.contains('NonConsolidated'))")),
+            "cnt_prior_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('Prior1Year') and context_ref.str.contains('NonConsolidated')")),
+            "all": len(self.xbrl_data_df)
+        }
+        
+
+    def get_data(self,doc_name='BS',term='current',Consolidated=True):
+        assert doc_name in ['BS','PL','CF','SS','NOTES'],"doc_name should be one of ['BS','PL','CF','SS','NOTES']"
+        assert term in ['current','prior','all'],"term should be one of ['current','prior','all']"
+        assert isinstance(Consolidated,bool),"Consolidated should be boolean"
+    
+        fs_dict={
+            'BS':"_BalanceSheet",
+            'PL':"_StatementOfIncome",
+            'CF':"_StatementOfCashFlows",
+            'SS':"_StatementOfChangesInEquity",
+            'NOTES':"_Notes"}
+
+        role_list = [role_key for role_key in list(self.linkbasefile_obj.account_tbl_role_dict.keys()) if fs_dict[doc_name] in role_key]
+        data_list = []
+        for role in role_list:
+            key_in_the_role = self.linkbasefile_obj.account_tbl_role_dict[role].key
+            print(len(key_in_the_role))
+            if Consolidated:
+                if term == 'current':
+                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('CurrentYear') and (not context_ref.str.contains('NonConsolidated'))")
+                elif term == 'prior':
+                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('Prior1Year') and (not context_ref.str.contains('NonConsolidated'))")
+                elif term == 'all':
+                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and (not context_ref.str.contains('NonConsolidated'))")
+            else:
+                if term == 'current':
+                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('CurrentYear') and context_ref.str.contains('NonConsolidated')")
+                elif term == 'prior':
+                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('Prior1Year') and context_ref.str.contains('NonConsolidated')")
+                elif term == 'all':
+                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('NonConsolidated')")
+            data=pd.merge(
+                xbrl_data_ext_df,
+                self.linkbasefile_obj.account_tbl_role_dict[role],
+                on='key',
+                how='left')#.query("not key.str.contains('Abstract')")
+            data = data.assign(docID=self.docid)
+            data_list.append(data)
+        return pd.concat(data_list)
+
 class linkbasefile():
     def __init__(self,zip_file_str:str,temp_path_str:str):
         self.zip_file_str = zip_file_str
@@ -803,7 +868,7 @@ class account_list_common():
         schima_word_list=['jppfs','jpcrp']
         self.taxonomy_file=data_path / "taxonomy_{}.zip".format(account_list_year)
         self.account_list_year=account_list_year
-        self.temp_path=data_path / "tmp"
+        self.temp_path=data_path / "tmp/taxonomy"
         self.temp_path.mkdir(parents=True, exist_ok=True)
         self.taxonomy_path=data_path / "taxonomy"
         self.taxonomy_path.mkdir(parents=True, exist_ok=True)
@@ -813,6 +878,7 @@ class account_list_common():
         self.path_jppfs_lab = self.download_jppfs_lab()
         self.path_jppfs_lab_en = self.download_jppfs_lab_en()
         self.path_jpcrp_pre = self.download_jpcrp_pre()
+        self.path_jppfs_pre_list = self.download_jppfs_pre()
         self.build()
 
     def download_taxonomy(self):
@@ -894,18 +960,21 @@ class account_list_common():
             f_path=f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
     
-    def download_jppfs_pre(self):
-        already_download_list=self.taxonomy_path.glob("jpcrp030000-asr_{}_pre.xml".format(self.account_list_year))
-        if len(list(already_download_list))>0:
-            return already_download_list[0]
+    def download_jppfs_pre(self)->list:
+        already_download_list=self.taxonomy_path.glob("jppfs_*pre*.xml")
+        if len(list(already_download_list))>9:
+            return already_download_list
         else:
             with ZipFile(str(self.taxonomy_file)) as zf:
-                fn=[item for item in zf.namelist() if ("pre.xml" in item) & ("jpcrp030000-asr" in item) & ("dep" not in item)]
+                fn=[item for item in zf.namelist() if ("_pre_" in item) & ("jppfs" in item) & ("dep" not in item)]
                 if len(fn)>0:
-                    zf.extract(fn[0], self.temp_path)
-            f_path=list(self.temp_path.glob("**/*.xml"))[0]
-            f_path=f_path.rename(self.taxonomy_path/f_path.name)
-            return f_path
+                    for f in fn:
+                        zf.extract(f, self.temp_path)
+            f_path_new_list = []
+            for f_path in list(self.temp_path.glob("**/*.xml")):
+                f_path_new=f_path.rename(self.taxonomy_path/f_path.name)
+                f_path_new_list.append(f_path_new)
+            return f_path_new_list
     
     def build(self):
         self.get_label_common_obj_jpcrp_lab = get_label_common(
@@ -924,17 +993,26 @@ class account_list_common():
             file_str=self.path_jppfs_lab,
             lang="English"
             )
+        
         self.get_presentation_common_obj = get_presentation_common(
             file_str=self.path_jpcrp_pre
         )
+        self.label_to_taxonomi_dict = self.get_presentation_common_obj.export_label_to_taxonomi_dict()
+        
+        for path in self.path_jppfs_pre_list:
+            get_presentation_common_obj = get_presentation_common(
+                file_str=path
+            )
+            self.label_to_taxonomi_dict.update(get_presentation_common_obj.export_label_to_taxonomi_dict())
+
             
     def assign_common_label(self,short_label_only=True):
         """
             TODO: keyでユニークにしているため、同じkeyが複数ある場合は、最初のものが残る結果、別のLabelが紐づく可能性がある
         """
-        label_to_taxonomi_dict = self.get_presentation_common_obj.export_label_to_taxonomi_dict()
+        #label_to_taxonomi_dict = self.get_presentation_common_obj.export_label_to_taxonomi_dict()
         label_tbl_jpcrp_jp = self.get_label_common_obj_jpcrp_lab.export_label_tbl(
-            label_to_taxonomi_dict=label_to_taxonomi_dict
+            label_to_taxonomi_dict=self.label_to_taxonomi_dict
             )
         df_jpcrp = label_tbl_jpcrp_jp.query("role == 'label'").drop_duplicates(subset='key').set_index("key").rename(columns={"text":"label_jp"})
         if not short_label_only:
@@ -943,7 +1021,7 @@ class account_list_common():
                 lang="English"
                 )
             label_tbl_jpcrp_en = self.get_label_common_obj_jpcrp_lab_en.export_label_tbl(
-                label_to_taxonomi_dict=label_to_taxonomi_dict
+                label_to_taxonomi_dict=self.label_to_taxonomi_dict
             )
             df_jpcrp = df_jpcrp.join([
                 label_tbl_jpcrp_jp.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_jp_long"}),
@@ -952,13 +1030,13 @@ class account_list_common():
                 ],how="left")
         
         label_tbl_jppfs_jp = self.get_label_common_obj_jppfs_lab.export_label_tbl(
-            label_to_taxonomi_dict=label_to_taxonomi_dict
+            label_to_taxonomi_dict=self.label_to_taxonomi_dict
         )
         df_jppfs = label_tbl_jppfs_jp.query("role == 'label'").drop_duplicates(subset='key').set_index("key").rename(columns={"text":"label_jp"})
         
         if not short_label_only:
             label_tbl_jppfs_en = self.get_label_common_obj_jppfs_lab_en.export_label_tbl(
-                label_to_taxonomi_dict=label_to_taxonomi_dict
+                label_to_taxonomi_dict=self.label_to_taxonomi_dict
             )
             df_jppfs = df_jppfs.join([
                 label_tbl_jppfs_jp.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_jp_long"}),
@@ -1012,7 +1090,7 @@ class get_presentation_common():
         self.locators = locators
         self.arcs = arcs
 
-    def _make_label_to_taxonomi_dict(self):
+    def _make_label_to_taxonomi_dict(self)->dict:
         
         locators_df = pd.DataFrame([locator.model_dump() for locator in self.locators]).dropna(subset=['schima_taxonomi'])
         locators_df = locators_df.assign(
@@ -1026,7 +1104,7 @@ class get_presentation_common():
         locators_df = locators_df.assign(
             role=locators_df.role.str.split('/',expand=True).iloc[:,-1],
             key=locators_df.schima_taxonomi.apply(format_taxonomi)
-                                       )
+                                    )
         pre_detail_list = OriginalAccountList(locators_df[get_columns_df(OriginalAccountList)])
         return pre_detail_list
     def export_parent_child_link_df(self)->ParentChildLink:

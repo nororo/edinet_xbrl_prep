@@ -17,7 +17,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 
 from pydantic.functional_validators import BeforeValidator
-from .utills import *
+from .utils import *
 # %% #################################################################
 #
 #            schima

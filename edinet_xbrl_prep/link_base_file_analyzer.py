@@ -19,7 +19,7 @@ from pydantic.functional_validators import BeforeValidator
 from pathlib import Path
 import requests
 from .xbrl_parser_rapper import *
-
+from .utils import *
 # %%
 StrOrNone = Annotated[str, BeforeValidator(lambda x: x or "")]
 FloatOrNone = Annotated[float, BeforeValidator(lambda x: x or 0.0)]
@@ -365,7 +365,7 @@ class get_presentation_account_list():
         locators_df = locators_df.assign(
             role=locators_df.role.str.split('/',expand=True).iloc[:,-1],
             key=locators_df.schima_taxonomi.apply(format_taxonomi)
-                                       )
+                                    )
         pre_detail_list = OriginalAccountList(locators_df[get_columns_df(OriginalAccountList)])
         return pre_detail_list
     def export_parent_child_link_df(self)->ParentChildLink:
@@ -460,7 +460,7 @@ class get_calc_edge_list():
         locators_df = locators_df.assign(
             role=locators_df.role.str.split('/',expand=True).iloc[:,-1],
             key=locators_df.schima_taxonomi.apply(format_taxonomi)
-                                       )
+            )
         cal_detail_list = OriginalAccountList(locators_df[get_columns_df(OriginalAccountList)])
         return cal_detail_list
     
@@ -556,21 +556,23 @@ class get_label():
 
 
 class fs_tbl_loader():
-    def __init__(self,account_list_common_obj,docid,zip_file_str,temp_path_str):
+    def __init__(self,account_list_common_obj,docid,zip_file_str,temp_path_str,role_to_get):
         self.linkbasefile_obj = linkbasefile(
             zip_file_str=zip_file_str,
             temp_path_str=temp_path_str
             )
-        self.linkbasefile_obj.read_linkbase_file()
+        with timer("read_linkbase_file"):
+            self.linkbasefile_obj.read_linkbase_file()
         self.linkbasefile_obj.check()
-        self.linkbasefile_obj.make_account_label(account_list_common_obj)
+        self.linkbasefile_obj.make_account_label(account_list_common_obj,role_to_get)
         self.docid = docid
-        self.xbrl_data_df,self.log_dict = get_xbrl_rapper(
-            docid=docid,
-            zip_file=zip_file_str,
-            temp_dir=DATA_PATH / "tmp",
-            out_path=temp_path_str,
-            update_flg=False)
+        with timer("get_xbrl_rapper"):
+            self.xbrl_data_df,self.log_dict = get_xbrl_rapper(
+                docid=docid,
+                zip_file=zip_file_str,
+                temp_dir=temp_path_str,
+                out_path=temp_path_str,
+                update_flg=False)
         self.cnt_dict = {
             "cnt_current_non_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('CurrentYear') and (not context_ref.str.contains('NonConsolidated'))")),
             "cnt_current_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('CurrentYear') and context_ref.str.contains('NonConsolidated')")),
@@ -665,36 +667,51 @@ class linkbasefile():
         #print(len(set(self.account_list.label)))
         assert len(set(self.label_tbl_jp.key) - all_key_set) == 0
 
-    def make_account_label(self,account_list_common_obj):
+    def make_account_label(self,account_list_common_obj,role_to_get_list=['BS','PL','CF','SS','NOTES']):
         account_label_org = self.make_account_label_org()
         account_label_common = self.make_account_label_common(account_list_common_obj)
         account_label = pd.concat([account_label_org,account_label_common],axis=0)
-        account_tbl = pd.merge(
-            self.account_list[['key','role']],
-            account_label[['label_jp']],
-            left_on='key',
-            right_index=True,
-            how='left')
-
-        self.account_link_tracer_obj = account_link_tracer(self.parent_child_df)
-        
-        role_list=list(set(self.parent_child_df.role))
-        account_tbl_role_dict = {}
-        for role_text in role_list:
-            role_suffix = role_text.split('/')[-1]
-            account_tbl_of_the_role = account_tbl.query("role.str.contains(@role_suffix)").drop_duplicates()
-            account_tbl_of_the_role = pd.merge(
-                account_tbl_of_the_role,
-                self.account_link_tracer_obj.get_child_order_recursive_list(
-                    key_list=account_tbl_of_the_role.key.to_list(),
-                    role=role_text
-                )[['order','child_key']],
+        with timer("make_account_tbl"):
+            account_tbl = pd.merge(
+                self.account_list[['key','role']],
+                account_label[['label_jp']],
                 left_on='key',
-                right_on='child_key',
+                right_index=True,
                 how='left')
-            account_tbl_of_the_role.order.fillna(1,inplace=True)
-            account_tbl_of_the_role.sort_values('order')
-            account_tbl_role_dict.update({role_suffix:account_tbl_of_the_role})
+        with timer("make_account_link_tracer"):
+            self.account_link_tracer_obj = account_link_tracer(self.parent_child_df)
+        
+        with timer("make_account_tbl_role_dict"):
+            fs_dict={
+                'BS':"_BalanceSheet",
+                'PL':"_StatementOfIncome",
+                'CF':"_StatementOfCashFlows",
+                'SS':"_StatementOfChangesInEquity",
+                'NOTES':"_Notes"}
+            role_list = list(set(self.parent_child_df.role))
+            role_list_f = []
+            if role_to_get_list:
+                for role_to_get in role_to_get_list:
+                    role_list_f = role_list_f + [role_key for role_key in role_list if fs_dict[role_to_get] in role_key]
+            else:
+                role_list_f = role_list
+            
+            account_tbl_role_dict = {}
+            for role_text in role_list_f:
+                role_suffix = role_text.split('/')[-1]
+                account_tbl_of_the_role = account_tbl.query("role.str.contains(@role_suffix)").drop_duplicates()
+                account_tbl_of_the_role = pd.merge(
+                    account_tbl_of_the_role,
+                    self.account_link_tracer_obj.get_child_order_recursive_list(
+                        key_list=account_tbl_of_the_role.key.to_list(),
+                        role=role_text
+                    )[['order','child_key']],
+                    left_on='key',
+                    right_on='child_key',
+                    how='left')
+                account_tbl_of_the_role.order.fillna(1,inplace=True)
+                account_tbl_of_the_role.sort_values('order')
+                account_tbl_role_dict.update({role_suffix:account_tbl_of_the_role})
         self.account_tbl_role_dict = account_tbl_role_dict
 
         #pl_account=account_tbl.query("role.str.contains('StatementOfIncome')").drop_duplicates()
@@ -753,11 +770,9 @@ class linkbasefile():
     def make_account_label_common(self,account_list_common_obj):
         self.detect_account_list_year()
         #self.account_list_common_obj = account_list_common_obj
-        label_to_taxonomi_dict=self.get_presentation_account_list_obj.export_label_to_taxonomi_dict()
+        #label_to_taxonomi_dict=self.get_presentation_account_list_obj.export_label_to_taxonomi_dict()
         
-        account_label_common = account_list_common_obj.assign_common_label(
-            short_label_only=True
-            )
+        account_label_common = account_list_common_obj.get_assign_common_label()
         print("common:",len(account_label_common))
         return account_label_common
         
@@ -1004,8 +1019,12 @@ class account_list_common():
                 file_str=path
             )
             self.label_to_taxonomi_dict.update(get_presentation_common_obj.export_label_to_taxonomi_dict())
+        
+        self.assign_common_label()
 
-            
+    def get_assign_common_label(self):
+        return self.assign_common_label_df
+    
     def assign_common_label(self,short_label_only=True):
         """
             TODO: keyでユニークにしているため、同じkeyが複数ある場合は、最初のものが残る結果、別のLabelが紐づく可能性がある
@@ -1043,7 +1062,7 @@ class account_list_common():
                 label_tbl_jppfs_en.query("role == 'label'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_eng"}),
                 label_tbl_jppfs_en.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_eng_long"})
                 ],how="left")
-        return pd.concat([df_jpcrp,df_jppfs])
+        self.assign_common_label_df = pd.concat([df_jpcrp,df_jppfs]).drop_duplicates()
 
 
 

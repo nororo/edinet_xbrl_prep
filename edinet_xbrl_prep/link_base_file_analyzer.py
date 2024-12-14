@@ -30,8 +30,8 @@ FloatOrNone = Annotated[float, BeforeValidator(lambda x: x or 0.0)]
 #
 ######################################################################
 
-def get_columns_df(schima:pa.DataFrameModel)->list:
-    return list(schima.to_schema().columns.keys())
+#def get_columns_df(schima:pa.DataFrameModel)->list:
+#    return list(schima.to_schema().columns.keys())
 
 
 class GetCalLog(BaseModel):
@@ -116,33 +116,71 @@ class AccountLabel(pa.DataFrameModel):
     role: Series[str]
     lang: Series[str]
 
-def format_taxonomi(taxonomi_str:str)->str:
-    """
-    Convert
-        From:
-        jpcrp030000-asr_E37207-000_IncreaseDecreaseInIncomeTaxesPayableOpeCF
-        To:
-        jpcrp030000-asr_E37207-000:IncreaseDecreaseInIncomeTaxesPayableOpeCF
-    """
-    return "_".join(taxonomi_str.split('_')[:-1])+":"+taxonomi_str.split('_')[-1]
+#def format_taxonomi(taxonomi_str:str)->str:
+#    """
+#    Convert
+#        From:
+#        jpcrp030000-asr_E37207-000_IncreaseDecreaseInIncomeTaxesPayableOpeCF
+#        To:
+#        jpcrp030000-asr_E37207-000:IncreaseDecreaseInIncomeTaxesPayableOpeCF
+#    """
+#    return "_".join(taxonomi_str.split('_')[:-1])+":"+taxonomi_str.split('_')[-1]
+
+
+
+class PreLocator(BaseModel):
+    role: StrOrNone
+    schima_taxonomi: StrOrNone
+    label: StrOrNone
+    schima_taxonomi_head: StrOrNone
+
+class Locator(BaseModel):
+    role: StrOrNone
+    schima_taxonomi: StrOrNone
+    label: StrOrNone
+
+class Arc(BaseModel):
+    role: StrOrNone
+    parent: StrOrNone
+    child: StrOrNone
+    child_order: StrOrNone
+    
+class CalArc(BaseModel):
+    role: StrOrNone
+    parent: StrOrNone
+    child: StrOrNone
+    child_order: StrOrNone
+    weight: FloatOrNone
+
+class LabArc(BaseModel):
+    label_pre: StrOrNone
+    label_lab: StrOrNone
+
+class Resource(BaseModel):
+    label_lab: StrOrNone
+    lang: StrOrNone
+    role: StrOrNone
+    text: StrOrNone
+
+
 # %% #################################################################
 #
 #            account_link_tracer
 #
 ######################################################################
 
-def remove_empty_lists(lst):
-    return [x for x in lst if x]
+#def remove_empty_lists(lst):
+#    return [x for x in lst if x]
 
 
-def flatten_list(lst):
-    flat_list = []
-    for item in lst:
-        if isinstance(item, list):
-            flat_list.extend(flatten_list(item))
-        else:
-            flat_list.append(item)
-    return flat_list
+#def flatten_list(lst):
+#    flat_list = []
+#    for item in lst:
+#        if isinstance(item, list):
+#            flat_list.extend(flatten_list(item))
+#        else:
+#            flat_list.append(item)
+#    return flat_list
 
 class account_link_tracer():
     """
@@ -233,40 +271,6 @@ class account_link_tracer():
             cnt=cnt+1
         all_keys_df=pd.DataFrame(all_keys).query("child_key in @child_keys").rename(columns={'child_order':'order'})
         return all_keys_df.sort_values('order')
-
-class PreLocator(BaseModel):
-    role: StrOrNone
-    schima_taxonomi: StrOrNone
-    label: StrOrNone
-    schima_taxonomi_head: StrOrNone
-
-class Locator(BaseModel):
-    role: StrOrNone
-    schima_taxonomi: StrOrNone
-    label: StrOrNone
-
-class Arc(BaseModel):
-    role: StrOrNone
-    parent: StrOrNone
-    child: StrOrNone
-    child_order: StrOrNone
-    
-class CalArc(BaseModel):
-    role: StrOrNone
-    parent: StrOrNone
-    child: StrOrNone
-    child_order: StrOrNone
-    weight: FloatOrNone
-
-class LabArc(BaseModel):
-    label_pre: StrOrNone
-    label_lab: StrOrNone
-
-class Resource(BaseModel):
-    label_lab: StrOrNone
-    lang: StrOrNone
-    role: StrOrNone
-    text: StrOrNone
 
 class get_presentation_account_list():
     """
@@ -556,7 +560,7 @@ class get_label():
 
 
 class fs_tbl_loader():
-    def __init__(self,account_list_common_obj,docid,zip_file_str,temp_path_str,role_to_get):
+    def __init__(self,account_list_common_obj,docid,zip_file_str,temp_path_str,role_label_list=['BS','PL','CF','SS','NOTES'],role_list=[]):
         self.linkbasefile_obj = linkbasefile(
             zip_file_str=zip_file_str,
             temp_path_str=temp_path_str
@@ -564,7 +568,7 @@ class fs_tbl_loader():
         with timer("read_linkbase_file"):
             self.linkbasefile_obj.read_linkbase_file()
         self.linkbasefile_obj.check()
-        self.linkbasefile_obj.make_account_label(account_list_common_obj,role_to_get)
+        self.linkbasefile_obj.make_account_label(account_list_common_obj,role_label_list,role_list)
         self.docid = docid
         with timer("get_xbrl_rapper"):
             self.xbrl_data_df,self.log_dict = get_xbrl_rapper(
@@ -580,21 +584,55 @@ class fs_tbl_loader():
             "cnt_prior_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('Prior1Year') and context_ref.str.contains('NonConsolidated')")),
             "all": len(self.xbrl_data_df)
         }
-        
+    def get_data_from_key(self,key_list:list,term='current',Consolidated=True):
+        """keyごとに取得"""
+        #data_list = []
+        if Consolidated:
+            if term == 'current':
+                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('CurrentYear') and (not context_ref.str.contains('NonConsolidated'))")
+            elif term == 'prior':
+                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('Prior1Year') and (not context_ref.str.contains('NonConsolidated'))")
+            elif term == 'all':
+                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and (not context_ref.str.contains('NonConsolidated'))")
+        else:
+            if term == 'current':
+                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('CurrentYear') and context_ref.str.contains('NonConsolidated')")
+            elif term == 'prior':
+                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('Prior1Year') and context_ref.str.contains('NonConsolidated')")
+            elif term == 'all':
+                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('NonConsolidated')")
+                
+        data=pd.merge(
+            xbrl_data_ext_df,
+            self.linkbasefile_obj.account_tbl_role_dict[role],
+            on='key',
+            how='left')#.query("not key.str.contains('Abstract')")
+        data = data.assign(docID=self.docid,role=role)
+        #data_list.append(data)
+        return data#pd.concat(data_list)
 
     def get_data(self,doc_name='BS',term='current',Consolidated=True):
-        assert doc_name in ['BS','PL','CF','SS','NOTES'],"doc_name should be one of ['BS','PL','CF','SS','NOTES']"
+        """roleまとめて取得"""
+        assert doc_name in ['BS','PL','CF','SS','NOTES','report'],"doc_name should be one of ['BS','PL','CF','SS','NOTES']"
         assert term in ['current','prior','all'],"term should be one of ['current','prior','all']"
         assert isinstance(Consolidated,bool),"Consolidated should be boolean"
     
         fs_dict={
-            'BS':"_BalanceSheet",
-            'PL':"_StatementOfIncome",
-            'CF':"_StatementOfCashFlows",
-            'SS':"_StatementOfChangesInEquity",
-            'NOTES':"_Notes"}
-
-        role_list = [role_key for role_key in list(self.linkbasefile_obj.account_tbl_role_dict.keys()) if fs_dict[doc_name] in role_key]
+                'BS':["_BalanceSheet","_ConsolidatedBalanceSheet"],
+                'PL':["_StatementOfIncome","_ConsolidatedStatementOfIncome"],
+                'CF':["_StatementOfCashFlows","_ConsolidatedStatementOfCashFlows"],
+                'SS':["_StatementOfChangesInEquity","_ConsolidatedStatementOfChangesInEquity"],
+                'NOTES':["_Notes","_ConsolidatedNotes"],
+                'report':["_CabinetOfficeOrdinanceOnDisclosure"]}
+        #fs_dict={
+        #    'BS':"_BalanceSheet",
+        #    'PL':"_StatementOfIncome",
+        #    'CF':"_StatementOfCashFlows",
+        #    'SS':"_StatementOfChangesInEquity",
+        #    'NOTES':"_Notes"}
+        role_list = []
+        for role_t in fs_dict[doc_name]:
+            role_list = [role_key for role_key in list(self.linkbasefile_obj.account_tbl_role_dict.keys()) if role_t in role_key]
         data_list = []
         for role in role_list:
             key_in_the_role = self.linkbasefile_obj.account_tbl_role_dict[role].key
@@ -618,7 +656,7 @@ class fs_tbl_loader():
                 self.linkbasefile_obj.account_tbl_role_dict[role],
                 on='key',
                 how='left')#.query("not key.str.contains('Abstract')")
-            data = data.assign(docID=self.docid)
+            data = data.assign(docID=self.docid,role=role)
             data_list.append(data)
         return pd.concat(data_list)
 
@@ -667,7 +705,7 @@ class linkbasefile():
         #print(len(set(self.account_list.label)))
         assert len(set(self.label_tbl_jp.key) - all_key_set) == 0
 
-    def make_account_label(self,account_list_common_obj,role_to_get_list=['BS','PL','CF','SS','NOTES']):
+    def make_account_label(self,account_list_common_obj,role_label_list,role_list):
         account_label_org = self.make_account_label_org()
         account_label_common = self.make_account_label_common(account_list_common_obj)
         account_label = pd.concat([account_label_org,account_label_common],axis=0)
@@ -683,19 +721,27 @@ class linkbasefile():
         
         with timer("make_account_tbl_role_dict"):
             fs_dict={
-                'BS':"_BalanceSheet",
-                'PL':"_StatementOfIncome",
-                'CF':"_StatementOfCashFlows",
-                'SS':"_StatementOfChangesInEquity",
-                'NOTES':"_Notes"}
-            role_list = list(set(self.parent_child_df.role))
+                'BS':["_BalanceSheet","_ConsolidatedBalanceSheet"],
+                'PL':["_StatementOfIncome","_ConsolidatedStatementOfIncome"],
+                'CF':["_StatementOfCashFlows","_ConsolidatedStatementOfCashFlows"],
+                'SS':["_StatementOfChangesInEquity","_ConsolidatedStatementOfChangesInEquity"],
+                'NOTES':["_Notes","_ConsolidatedNotes"],
+                'report':["_CabinetOfficeOrdinanceOnDisclosure"]}
+            role_list_all = list(set(self.parent_child_df.role))
             role_list_f = []
-            if role_to_get_list:
-                for role_to_get in role_to_get_list:
-                    role_list_f = role_list_f + [role_key for role_key in role_list if fs_dict[role_to_get] in role_key]
+            if len(role_label_list)>0:
+                for role_to_get in role_label_list:
+                    for role_t in fs_dict[role_to_get]:
+                        role_list_f = role_list_f + [role_key for role_key in role_list_all if role_t in role_key]
             else:
-                role_list_f = role_list
+                role_list_f = role_list_all
             
+            if len(role_list)>0:
+                # role_list が優先される
+                role_list_f = []
+                for role_t in role_list:
+                    role_list_f = role_list_f + [role_key for role_key in role_list_all if role_t in role_key]
+
             account_tbl_role_dict = {}
             for role_text in role_list_f:
                 role_suffix = role_text.split('/')[-1]
@@ -1232,315 +1278,3 @@ def get_presentation_account_list_aud(docid:str,identifier:str,out_path)->(Paren
     
     return p_edges_df[get_columns_df(ParentChildLink)],pre_detail_list[get_columns_df(OriginalAccountList)],label_to_taxonomi_dict,dict_t
 
-
-# memo
-
-def get_presentation_account_list2(zip_file_path,temp_path_str,doc_type='public')->(ParentChildLink,OriginalAccountList,dict,dict):
-    """
-    locator:
-        (role:)
-        href:
-        label:
-    arc:
-        (role:)
-        from:
-        to:
-        order:
-        role is given to edge
-    """
-    log_dict = {
-        #'docID':docid,
-        'org_taxonomi_cnt':None,
-        'org_taxonomi_list':[],
-        'status':None,
-        'error_message':None
-            }
-    temp_path=Path(temp_path_str)
-    temp_path.mkdir(parents=True,exist_ok=True)
-
-    if doc_type == 'audit':
-        doc_type_str = 'aai'
-        xml_def_path = temp_path / "XBRL" / "AuditDoc"
-    elif doc_type == 'public':
-        doc_type_str = 'asr'
-        xml_def_path = temp_path / "XBRL" / "PublicDoc"
-    else:
-        raise Exception("doc_type must be 'audit' or 'public'")
-
-    try:
-        with ZipFile(str(zip_file_path)) as zf:
-            fn=[item for item in zf.namelist() if ("pre.xml" in item) & (doc_type_str in item)]
-            if len(fn)>0:
-                zf.extract(fn[0], temp_path)
-        if len(list(xml_def_path.glob("*pre.xml")))==0:
-            raise Exception("No pre.xml file")
-        else:
-            tree = ET.parse(str(list(xml_def_path.glob("*pre.xml"))[0]))
-            root = tree.getroot()
-
-            locators = []
-            arcs = []
-            for child in root:
-                attr_sr_p = pd.Series(child.attrib)
-                role = attr_sr_p[attr_sr_p.index.str.contains('role')].item()
-                for child_of_child in child:
-                    locator = {'role':role,'schima_taxonomi':None}
-                    arc = {'parent':None,'child':None,'child_order':None,'role':role}
-
-                    attr_sr = pd.Series(child_of_child.attrib)
-                    attr_type = attr_sr[attr_sr.index.str.contains('type')].item()
-                    if attr_type=='locator':
-                        locator['schima_taxonomi'] = attr_sr[attr_sr.index.str.contains('href')].item().split('#')[1]
-                        locator['label'] = attr_sr[attr_sr.index.str.contains('label')].item()
-                    elif attr_type=='arc':
-                        arc['parent'] = attr_sr[attr_sr.index.str.contains('from')].item()
-                        arc['child'] = attr_sr[attr_sr.index.str.contains('to')].item()
-                        arc['child_order'] = attr_sr[attr_sr.index.str.contains('order')].item()
-
-                    locators.append(locator)
-                    arcs.append(arc)
-
-            locators_df = pd.DataFrame(locators).dropna(subset=['schima_taxonomi'])
-            locators_df = locators_df.assign(
-                role=locators_df.role.str.split('/',expand=True).iloc[:,-1],
-                key=locators_df.schima_taxonomi.apply(format_taxonomi)
-                                           )
-            label_to_taxonomi_dict = locators_df.set_index('label')['key'].to_dict()
-            
-            arcs_df = pd.DataFrame(arcs).dropna(subset=['child'])
-            arcs_df = arcs_df.assign(
-                parent_key=arcs_df.parent.replace(label_to_taxonomi_dict),
-                child_key = arcs_df.child.replace(label_to_taxonomi_dict))
-
-            arcs_df = ParentChildLink(arcs_df)
-            pre_detail_list = OriginalAccountList(locators_df)
-            log_dict['get_pre_status'] = 'success'            
-            log_dict['get_pre_error_message'] = None
-        
-    except Exception as e:
-        #print(e)
-        label_to_taxonomi_dict = {}
-        log_dict['get_pre_status'] = 'error'
-        log_dict['get_pre_error_message'] = e
-        arcs_df = ParentChildLink(pd.DataFrame(columns=get_columns_df(ParentChildLink)))
-        pre_detail_list = OriginalAccountList(pd.DataFrame(columns=get_columns_df(OriginalAccountList)))
-        pass
-    return arcs_df[get_columns_df(ParentChildLink)], pre_detail_list[get_columns_df(OriginalAccountList)], label_to_taxonomi_dict, GestPresentationLog(**log_dict)
-
-def get_calc_edge_list2(zip_file,temp_path,log_dict=None):
-    if log_dict is None:
-        log_dict = {
-            #'docID':docid,
-            'org_taxonomi_cnt':None,
-            'org_taxonomi_list':[],
-            'status':None,
-            'error_message':None
-                }
-    doc_type_str = 'asr'
-    xml_def_path = temp_path / "XBRL" / "PublicDoc"
-    try:
-        #data_dir_raw = PROJDIR / "data" / "1_raw"
-        #zip_file = list(data_dir_law.glob("data_pool_*/"+self.docid+".zip"))[0]
-        with ZipFile(str(zip_file)) as zf:
-            fn=[item for item in zf.namelist() if ("cal.xml" in item)&(doc_type_str in item)]
-            if len(fn)>0:
-                zf.extract(fn[0], temp_path)        
-        tree = ET.parse(str(list(xml_def_path.glob("*cal.xml"))[0]))
-        root = tree.getroot()
-
-        locators=[]
-        arcs=[]
-        for child in root:
-            attr_sr_p=pd.Series(child.attrib)
-            role=attr_sr_p[attr_sr_p.index.str.contains('role')].item()
-            for child_of_child in child:
-                locator={'schima_taxonomi':None,'label':None,'fs':role}
-                arc={'parent':None,'child':None,'child_order':None,'weight':None,'fs':role}
-                attr_sr=pd.Series(child_of_child.attrib)
-                attr_type=attr_sr[attr_sr.index.str.contains('type')].item() 
-                if attr_type=='locator':
-                    locator['schima_taxonomi']=attr_sr[attr_sr.index.str.contains('href')].item().split('#')[1]
-                    locator['label']=attr_sr[attr_sr.index.str.contains('label')].item()
-
-                elif attr_type=='arc':
-                    arc['parent']=attr_sr[attr_sr.index.str.contains('from')].item()
-                    arc['child']=attr_sr[attr_sr.index.str.contains('to')].item()
-                    arc['child_order']=attr_sr[attr_sr.index.str.contains('order')].item()
-                    arc['weight']=attr_sr[attr_sr.index.str.contains('weight')].item()
-
-                locators.append(locator)
-                arcs.append(arc)
-
-
-        locators_df=pd.DataFrame(locators).dropna(subset=['schima_taxonomi'])
-        locators_df=locators_df.assign(rol=locators_df.fs.str.split('/',expand=True).iloc[:,-1],
-                                        key=locators_df.schima_taxonomi.apply(format_taxonomi))
-        label_to_taxonomi_dict=locators_df.set_index('label')['key'].to_dict()
-        arcs_df=pd.DataFrame(arcs).dropna(subset=['child'])
-        arcs_df=arcs_df.assign(
-            parent_key=arcs_df.parent.replace(label_to_taxonomi_dict),
-            child_key=arcs_df.child.replace(label_to_taxonomi_dict),
-            weight=arcs_df.weight.astype(float))
-        
-        arcs_df=CalParentChildLink(arcs_df.drop_duplicates(subset=['parent_taxonomi_tag','child_taxonomi_tag']))
-        log_dict['load_pre']='success'
-    except Exception as e:
-        print(e)
-        log_dict['load_pre']=e
-        arcs_df=pd.DataFrame(columns=['parent_taxonomi_tag','child_taxonomi_tag','weight','fs'])
-
-
-def get_label2(self,lang:str='English')->pd.DataFrame:
-    if lang=='Japanese':
-        f_keyword='lab.xml'
-    else:
-        f_keyword='lab-en.xml'
-    try:
-        zip_file = list(self.data_dir_law.glob("data_pool_*/"+self.docid+".zip"))[0]
-        with ZipFile(str(zip_file)) as zf:
-                fn=[item for item in zf.namelist() if f_keyword in item]
-                if len(fn)>0:
-                    zf.extract(fn[0], self.out_path)
-        xml_def_path=self.out_path / "XBRL" / "PublicDoc"
-        tree = ET.parse(str(list(xml_def_path.glob("*"+f_keyword))[0])) # TODO check iregular file name
-        root = tree.getroot()
-
-        resources=[]
-        arcs=[]
-        for child in root:
-            for child_of_child in child:
-                resource={'label_lab':None,'lang':None,'role':None,'text':None}
-                arc={'label_pre':None,'label_lab':None}
-                attr_sr=pd.Series(child_of_child.attrib)
-                attr_type=attr_sr[attr_sr.index.str.contains('type')].values[0] 
-                if attr_type=='resource':
-                    resource['label_lab']=attr_sr[attr_sr.index.str.contains('label')].values[0]
-                    resource['lang']=attr_sr[attr_sr.index.str.contains('lang')].values[0]
-                    resource['role']=attr_sr[attr_sr.index.str.contains('role')].values[0].split('/')[-1]
-                    resource['text']=child_of_child.text
-                elif attr_type=='arc':
-                    arc['label_pre']=attr_sr[attr_sr.index.str.contains('from')].values[0]
-                    arc['label_lab']=attr_sr[attr_sr.index.str.contains('to')].values[0]
-                resources.append(resource)
-                arcs.append(arc)
-        label_to_prelabel_dict=pd.DataFrame(arcs).dropna(subset='label_lab').set_index('label_lab')['label_pre'].to_dict()
-        
-        label_tbl=pd.DataFrame(resources).dropna(subset='label_lab')
-        label_tbl=label_tbl.assign(label_taxonomi_tag=label_tbl.label_lab.replace(label_to_prelabel_dict).replace(self.label_to_taxonomi_dict))
-                    
-        #label_tbl=pd.merge(pd.DataFrame(resources).dropna(subset='label_lab'),pd.DataFrame(arcs).dropna(subset='label_lab'),left_on='label_lab',right_on='label_lab')
-        #self.label_to_taxonomi_dict
-        self.proc_rst['load_label']='success'
-
-        return label_tbl
-    except Exception as e:
-        #print(e)
-        self.proc_rst['load_label']=e
-        return pd.DataFrame(columns=['label_lab','label_pre','lang','role','text'])
-
-
-
-
-class get_def_list():
-
-    def __init__(self,zip_file_str:str,temp_path_str:str,doc_type:str='public'):#->(parent_child_link_schima,,dict,dict):
-        
-        self.log_dict = {
-            #'docID':docid,
-            'is_pre_file_flg':None,
-            'get_pre_status':None,
-            'get_pre_error_message':None
-            }
-        self.temp_path=Path(temp_path_str)
-        self.temp_path.mkdir(parents=True,exist_ok=True)
-        if doc_type == 'audit':
-            self.doc_type_str = 'aai'
-            self.xml_def_path = self.temp_path / "XBRL" / "AuditDoc"
-        elif doc_type == 'public':
-            self.doc_type_str = 'asr'
-            self.xml_def_path = self.temp_path / "XBRL" / "PublicDoc"
-        else:
-            raise Exception("doc_type must be 'audit' or 'public'")
-        
-        self.extruct_pre_file_from_xbrlzip(zip_file_str)
-        if self.log_dict['get_pre_status']!='failure':
-            self.parse_pre_file()
-    
-    def extruct_pre_file_from_xbrlzip(self,zip_file_str:str):
-        try:
-            with ZipFile(str(zip_file_str)) as zf:
-                fn=[item for item in zf.namelist() if ("def.xml" in item) & (self.doc_type_str in item)]
-                if len(fn)>0:
-                    zf.extract(fn[0], self.temp_path)
-            if len(list(self.xml_def_path.glob("*def.xml")))==0:
-                self.log_dict['is_pre_file_flg'] = 0
-                raise Exception("No def.xml file")
-            else:
-                self.log_dict['is_pre_file_flg'] = 1
-            self.log_dict['get_pre_status'] = 'success'
-            
-        except Exception as e:
-            self.log_dict['is_pre_file_flg'] = 0
-            self.log_dict['get_pre_status'] = 'failure'
-            self.log_dict['get_pre_error_message'] = str(e)
-    
-    def parse_pre_file(self):
-        tree = ET.parse(str(list(self.xml_def_path.glob("*def.xml"))[0]))
-        root = tree.getroot()
-        locators = []
-        arcs = []
-        for child in root:
-            attr_sr_p = pd.Series(child.attrib)
-            role = attr_sr_p[attr_sr_p.index.str.contains('role')].item()
-            for child_of_child in child:
-                locator = {'role':role,'schima_taxonomi':None,'label':None}
-                arc = {'parent':None,'child':None,'child_order':None,'role':role}
-
-                attr_sr = pd.Series(child_of_child.attrib)
-                attr_type = attr_sr[attr_sr.index.str.contains('type')].item()
-                if attr_type=='locator':
-                    locator['schima_taxonomi'] = attr_sr[attr_sr.index.str.contains('href')].item().split('#')[1]
-                    locator['label'] = attr_sr[attr_sr.index.str.contains('label')].item()
-                    locators.append(Locator(**locator))
-                elif attr_type=='arc':
-                    arc['parent'] = attr_sr[attr_sr.index.str.contains('from')].item()
-                    arc['child'] = attr_sr[attr_sr.index.str.contains('to')].item()
-                    arc['child_order'] = attr_sr[attr_sr.index.str.contains('order')].item()
-                    arcs.append(Arc(**arc))
-                
-        self.locators = locators
-        self.arcs = arcs
-
-    def _make_label_to_taxonomi_dict(self):
-        
-        locators_df = pd.DataFrame([locator.model_dump() for locator in self.locators]).dropna(subset=['schima_taxonomi'])
-        locators_df = locators_df.assign(
-            role=locators_df.role.str.split('/',expand=True).iloc[:,-1],
-            key=locators_df.schima_taxonomi.apply(format_taxonomi)
-            )
-        self.label_to_taxonomi_dict = locators_df.set_index('label')['key'].to_dict()
-
-    def export_account_list_df(self)->OriginalAccountList:
-        locators_df = pd.DataFrame([locator.model_dump() for locator in self.locators]).dropna(subset=['schima_taxonomi'])
-        locators_df = locators_df.assign(
-            role=locators_df.role.str.split('/',expand=True).iloc[:,-1],
-            key=locators_df.schima_taxonomi.apply(format_taxonomi)
-                                       )
-        pre_detail_list = OriginalAccountList(locators_df[get_columns_df(OriginalAccountList)])
-        return pre_detail_list
-    def export_parent_child_link_df(self)->ParentChildLink:
-        self._make_label_to_taxonomi_dict()
-        arcs_df = pd.DataFrame([arc.model_dump() for arc in self.arcs]).dropna(subset=['child'])
-        arcs_df = arcs_df.assign(
-            parent_key = arcs_df.parent.replace(self.label_to_taxonomi_dict),
-            child_key = arcs_df.child.replace(self.label_to_taxonomi_dict))
-
-        arcs_df = ParentChildLink(arcs_df[get_columns_df(ParentChildLink)])
-        return arcs_df
-    
-    def export_log(self)->GetPresentationLog:
-        return GetPresentationLog(**self.log_dict)
-    
-    def export_label_to_taxonomi_dict(self):
-        self._make_label_to_taxonomi_dict()
-        return self.label_to_taxonomi_dict

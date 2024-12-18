@@ -154,11 +154,11 @@ def get_xbrl_df(xbrl_filename:str,log_dict,temp_dir)->(xbrl_elm_schima,dict):
     ctrl = Cntlr.Cntlr(logFileName=str(log_dict['arelle_log_fname']))
     model_xbrl = ctrl.modelManager.load(xbrl_filename)
     if len(model_xbrl.facts)==0:
-        log_dict['xbrl_load_status']="Failure"
+        log_dict['xbrl_load_status']="failure"
         ctrl.close()
         return pd.DataFrame(columns=get_columns_df(xbrl_elm_schima)),log_dict
     else:
-        log_dict['xbrl_load_status']="Success"
+        log_dict['xbrl_load_status']="success"
         fact_dict_list = []
         for fact in model_xbrl.facts:
             fact_dict_list.append(get_fact_data(fact))
@@ -197,8 +197,15 @@ def get_xbrl_rapper(docid,zip_file:str,temp_dir:Path,out_path:Path,update_flg=Fa
                 log_dict["is_xsd_file"] = True
             else:
                 log_dict["is_xsd_file"] = False
+            fn=[item for item in zf.namelist() if ("def.xml" in item)&("PublicDoc" in item)&("asr" in item)]
+            if len(fn)>0:
+                zf.extract(fn[0], out_path)
+                log_dict["is_def_file"] = True
+            else:
+                log_dict["is_def_file"] = False
         xbrl_path=out_path / "XBRL" / "PublicDoc"
-        if (len(list(xbrl_path.glob("*.xbrl")))>0)&(len(list(xbrl_path.glob("*.xsd")))>0): # xbrl and xsd file exists
+
+        if (len(list(xbrl_path.glob("*.xbrl")))>0)&(len(list(xbrl_path.glob("*.xsd")))>0)&(len(list(xbrl_path.glob("*def.xml")))>0): # xbrl and xsd file exists
             xbrl_filename=str(list(xbrl_path.glob("*.xbrl"))[0])
             if (not already_exist_flg)|(update_flg==True):
                 (xbrl_path / "arelle.log").touch()
@@ -206,11 +213,12 @@ def get_xbrl_rapper(docid,zip_file:str,temp_dir:Path,out_path:Path,update_flg=Fa
                 xbrl_parsed.to_csv(out_path / "xbrl_parsed.csv",index=False)
             
                 log_dict=get_xbrl_dei_df(xbrl_filename,log_dict,temp_dir)
-                log_dict["get_xbrl_status"] = "Success"
+                xbrl_parsed['AccountingStandardsDEI'] = log_dict['AccountingStandardsDEI']
+                log_dict["get_xbrl_status"] = "success"
                 log_dict["get_xbrl_error_message"] = None
 
             else:
-                log_dict["get_xbrl_status"] = "Success"
+                log_dict["get_xbrl_status"] = "success"
                 log_dict["get_xbrl_error_message"] = None
             out_filename=str(xbrl_path / "log_dict.json")
             with open(out_filename, mode="wt", encoding="utf-8") as f:
@@ -218,14 +226,14 @@ def get_xbrl_rapper(docid,zip_file:str,temp_dir:Path,out_path:Path,update_flg=Fa
             
             return xbrl_parsed,log_dict
         else:
-            log_dict["get_xbrl_status"] = "Failure"
+            log_dict["get_xbrl_status"] = "failure"
             log_dict["get_xbrl_error_message"] = "No xbrl or xsd file"
             out_filename=str(xbrl_path / "log_dict.json")
             with open(out_filename, mode="wt", encoding="utf-8") as f:
                 json.dump(log_dict, f, ensure_ascii=False, indent=2)
             return pd.DataFrame(columns=get_columns_df(xbrl_elm_schima)),log_dict
     except Exception as e:
-        log_dict["get_xbrl_status"] = "Failure"
+        log_dict["get_xbrl_status"] = "failure"
         log_dict["get_xbrl_error_message"] = e
         out_filename=str(xbrl_path / "log_dict.json")
         with open(out_filename, mode="wt", encoding="utf-8") as f:

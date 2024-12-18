@@ -91,7 +91,7 @@ def get_fact_data(fact)->ArreleFact:
     else:
         fact_data['instant_date'] = None
 
-       
+    
     fact_data['end_date_pv']=None
     fact_data['instant_date_pv']=None
     for item in fact.context.propertyView:
@@ -172,11 +172,11 @@ def get_xbrl_rapper(docid,zip_file,temp_dir,out_path,update_flg=False,log_dict=N
     
     
     try:
-        already_exist_flg=(out_path / "textblock_cur.csv").exists()
+        already_exist_flg=(out_path / "xbrl_parsed.csv").exists()
         if (already_exist_flg)&(update_flg==False):
             log_dict["already_parse_xbrl"] = True
-            textblock_cur=pd.read_csv(out_path / "textblock_cur.csv",dtype=dtype(xbrl_elm_schima))
-            return xbrl_elm_schima(textblock_cur),log_dict
+            xbrl_parsed=pd.read_csv(out_path / "xbrl_parsed.csv",dtype=dtype(xbrl_elm_schima))
+            return xbrl_elm_schima(xbrl_parsed),log_dict
     except Exception as e:
         already_exist_flg=False
         pass
@@ -200,28 +200,35 @@ def get_xbrl_rapper(docid,zip_file,temp_dir,out_path,update_flg=False,log_dict=N
         xbrl_path=out_path / "XBRL" / "PublicDoc"
         if (len(list(xbrl_path.glob("*.xbrl")))>0)&(len(list(xbrl_path.glob("*.xsd")))>0): # xbrl and xsd file exists
             xbrl_filename=str(list(xbrl_path.glob("*.xbrl"))[0])
-            if (~already_exist_flg)|(update_flg==True):
+            if (not already_exist_flg)|(update_flg==True):
                 (xbrl_path / "arelle.log").touch()
-                textblock_cur,log_dict=get_xbrl_df(xbrl_filename,log_dict,temp_dir)
-                textblock_cur.to_csv(out_path / "textblock_cur.csv",index=False)
+                xbrl_parsed,log_dict=get_xbrl_df(xbrl_filename,log_dict,temp_dir)
+                xbrl_parsed.to_csv(out_path / "xbrl_parsed.csv",index=False)
             
                 log_dict=get_xbrl_dei_df(xbrl_filename,log_dict,temp_dir)
                 log_dict["get_xbrl_status"] = "Success"
                 log_dict["get_xbrl_error_message"] = None
-                out_filename=str(xbrl_path / "log_dict.json")
-                with open(out_filename, mode="wt", encoding="utf-8") as f:
-                	json.dump(log_dict, f, ensure_ascii=False, indent=2)
 
             else:
                 log_dict["get_xbrl_status"] = "Success"
                 log_dict["get_xbrl_error_message"] = None
+            out_filename=str(xbrl_path / "log_dict.json")
+            with open(out_filename, mode="wt", encoding="utf-8") as f:
+                json.dump(log_dict, f, ensure_ascii=False, indent=2)
             
-            return textblock_cur,log_dict
+            return xbrl_parsed,log_dict
         else:
             log_dict["get_xbrl_status"] = "Failure"
             log_dict["get_xbrl_error_message"] = "No xbrl or xsd file"
+            out_filename=str(xbrl_path / "log_dict.json")
+            with open(out_filename, mode="wt", encoding="utf-8") as f:
+                json.dump(log_dict, f, ensure_ascii=False, indent=2)
             return pd.DataFrame(columns=get_columns_df(xbrl_elm_schima)),log_dict
     except Exception as e:
         log_dict["get_xbrl_status"] = "Failure"
         log_dict["get_xbrl_error_message"] = e
+        out_filename=str(xbrl_path / "log_dict.json")
+        with open(out_filename, mode="wt", encoding="utf-8") as f:
+            json.dump(log_dict, f, ensure_ascii=False, indent=2)
+            
         return pd.DataFrame(columns=get_columns_df(xbrl_elm_schima)),log_dict

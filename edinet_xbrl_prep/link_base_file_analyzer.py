@@ -646,7 +646,7 @@ class get_label_common():
         TODO: change label to taxonomi
         """
         label_tbl=self.label_tbl.query("key_all in @label_to_taxonomi_dict.keys()")
-        print("label: ",len(label_tbl))
+        #print("label: ",len(label_tbl))
         label_tbl=AccountLabel(
             label_tbl.assign(
                 label=label_tbl.label_lab.str.replace('label_',''),
@@ -664,11 +664,11 @@ class account_list_common():
             'lab.xml':"jpcrp",
             'lab-en.xml':"jpcrp"}
         schima_word_list=['jppfs','jpcrp']
-        self.taxonomy_file=data_path / "taxonomy_{}.zip".format(account_list_year)
-        self.account_list_year=account_list_year
-        self.temp_path=data_path / "tmp/taxonomy"
+        self.taxonomy_file = data_path / "taxonomy_{}.zip".format(account_list_year)
+        self.account_list_year = account_list_year
+        self.temp_path = data_path / "tmp/taxonomy"
         self.temp_path.mkdir(parents=True, exist_ok=True)
-        self.taxonomy_path=data_path / "taxonomy"
+        self.taxonomy_path = data_path / ("taxonomy_" + str(account_list_year))
         self.taxonomy_path.mkdir(parents=True, exist_ok=True)
         self.download_taxonomy()
         self.path_jpcrp_lab = self.download_jpcrp_lab()
@@ -694,73 +694,75 @@ class account_list_common():
                 f.write(chunk)
 
     def download_jpcrp_lab(self):
-        already_download_list=self.taxonomy_path.glob("jpcrp_{}_lab.xml".format(self.account_list_year))
-        if len(list(already_download_list))>0:
+        already_download_list = list(self.taxonomy_path.glob("jpcrp_{}_lab.xml".format(self.account_list_year)))
+        if len(already_download_list)>0:
             return already_download_list[0]
         else:
             with ZipFile(str(self.taxonomy_file)) as zf:
                 fn=[item for item in zf.namelist() if ("lab.xml" in item) & ("jpcrp" in item) & ("dep" not in item)]
                 if len(fn)>0:
                     zf.extract(fn[0], self.temp_path)
-            f_path=list(self.temp_path.glob("**/*.xml"))[0]
-            f_path=f_path.rename(self.taxonomy_path/f_path.name)
+            f_path = list(self.temp_path.glob("**/*.xml"))[0]
+            f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
 
     def download_jpcrp_lab_en(self):
-        already_download_list=self.taxonomy_path.glob("jpcrp_{}_lab-en.xml".format(self.account_list_year))
-        if len(list(already_download_list))>0:
+        already_download_list = list(self.taxonomy_path.glob("jpcrp_{}_lab-en.xml".format(self.account_list_year)))
+        if len(already_download_list)>0:
             return already_download_list[0]
         else:
             with ZipFile(str(self.taxonomy_file)) as zf:
                 fn=[item for item in zf.namelist() if ("lab-en.xml" in item) & ("jpcrp" in item) & ("dep" not in item)]
                 if len(fn)>0:
                     zf.extract(fn[0], self.temp_path)
-            f_path=list(self.temp_path.glob("**/*.xml"))[0]
-            f_path=f_path.rename(self.taxonomy_path/f_path.name)
+            f_path = list(self.temp_path.glob("**/*.xml"))[0]
+            f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
     
     def download_jppfs_lab(self):
-        already_download_list=self.taxonomy_path.glob("jppfs_{}_lab.xml".format(self.account_list_year))
-        if len(list(already_download_list))>0:
+        already_download_list = list(self.taxonomy_path.glob("jppfs_{}_lab.xml".format(self.account_list_year)))
+        if len(already_download_list)>0:
             return already_download_list[0]
         else:
             with ZipFile(str(self.taxonomy_file)) as zf:
                 fn=[item for item in zf.namelist() if ("lab.xml" in item) & ("jppfs" in item) & ("dep" not in item)]
                 if len(fn)>0:
                     zf.extract(fn[0], self.temp_path)
-            f_path=list(self.temp_path.glob("**/*.xml"))[0]
-            f_path=f_path.rename(self.taxonomy_path/f_path.name)
+            f_path = list(self.temp_path.glob("**/*.xml"))[0]
+            f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
     
     def download_jppfs_lab_en(self):
-        already_download_list=self.taxonomy_path.glob("jpcrp_{}_lab-en.xml".format(self.account_list_year))
-        if len(list(already_download_list))>0:
+        already_download_list=list(self.taxonomy_path.glob("jpcrp_{}_lab-en.xml".format(self.account_list_year)))
+        if len(already_download_list)>0:
             return already_download_list[0]
         else:
             with ZipFile(str(self.taxonomy_file)) as zf:
                 fn=[item for item in zf.namelist() if ("lab-en.xml" in item) & ("jppfs" in item) & ("dep" not in item)]
                 if len(fn)>0:
                     zf.extract(fn[0], self.temp_path)
-            f_path=list(self.temp_path.glob("**/*.xml"))[0]
-            f_path=f_path.rename(self.taxonomy_path/f_path.name)
+            f_path = list(self.temp_path.glob("**/*.xml"))[0]
+            f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
 
     def download_jpcrp_pre(self):
-        already_download_list=self.taxonomy_path.glob("jpcrp030000-asr_{}_pre.xml".format(self.account_list_year))
-        if len(list(already_download_list))>0:
+        already_download_list=list(self.taxonomy_path.glob("jpcrp030000-asr_{}_pre.xml".format(self.account_list_year)))
+        if len(already_download_list)>0:
             return already_download_list[0]
         else:
             with ZipFile(str(self.taxonomy_file)) as zf:
                 fn=[item for item in zf.namelist() if ("pre.xml" in item) & ("jpcrp030000-asr" in item) & ("dep" not in item)]
                 if len(fn)>0:
                     zf.extract(fn[0], self.temp_path)
-            f_path=list(self.temp_path.glob("**/*.xml"))[0]
-            f_path=f_path.rename(self.taxonomy_path/f_path.name)
+            f_path = list(self.temp_path.glob("**/*.xml"))[0]
+            f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
     
     def download_jppfs_pre(self)->list:
-        already_download_list=self.taxonomy_path.glob("jppfs_*pre*.xml")
-        if len(list(already_download_list))>9:
+        already_download_list=list(self.taxonomy_path.glob("jppfs*_pre_*.xml"))
+        
+        if len(already_download_list)>500: # 652 files in 2024
+            #print("already_download_list: ",len(already_download_list))
             return already_download_list
         else:
             with ZipFile(str(self.taxonomy_file)) as zf:
@@ -770,8 +772,9 @@ class account_list_common():
                         zf.extract(f, self.temp_path)
             f_path_new_list = []
             for f_path in list(self.temp_path.glob("**/*.xml")):
-                f_path_new=f_path.rename(self.taxonomy_path/f_path.name)
+                f_path_new = f_path.rename(self.taxonomy_path/f_path.name)
                 f_path_new_list.append(f_path_new)
+            #print("{} files are downloaded".format(len(f_path_new_list)))
             return f_path_new_list
     
     def build(self):

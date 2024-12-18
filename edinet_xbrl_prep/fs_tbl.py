@@ -25,10 +25,59 @@ from .link_base_file_analyzer import *
 from .utils import *
 
 
+class fs_data(pa.DataFrameModel):
+    #ParentChildLink
+    """
+    'key': taxonomy like 'jpcrp_cor:NetSales'
+    'data_str': data (string) like '1000000'
+    'decimals': 3桁の表示
+    'precision': ???
+    'context_ref' # T:-3, M:-6, B:-9
+    'element_name'
+    'unit' # JPY
+    'period_type'
+    'isTextBlock_flg'
+    'abstract_flg'
+    'period_start' # durationの場合 当期末日, instantの場合 None
+    'period_end' # durationの場合 当期末日, instantの場合 当期末日
+    'instant_date' # durationの場合 None, instantの場合 当期末日
+    'end_date_pv' # durationの場合 前期末日, instantの場合 None
+    'instant_date_pv' # durationの場合 None, instantの場合 前期対象日
+    'scenario'
+    'role'
+    'label_jp'
+    'order'
+    'child_key'
+    'docid']
+    """
+    key: Series[str] = pa.Field(nullable=True)
+    data_str: Series[str] = pa.Field(nullable=True)
+    decimals: Series[str] = pa.Field(nullable=True)
+    precision: Series[str] = pa.Field(nullable=True)
+    context_ref: Series[str] = pa.Field(nullable=True)
+    element_name: Series[str] = pa.Field(nullable=True)
+    unit: Series[str] = pa.Field(nullable=True)
+    period_type: Series[str] = pa.Field(isin=['instant','duration'],nullable=True) # 'instant','duration'
+    isTextBlock_flg: Series[int] = pa.Field(isin=[0,1],nullable=True) # 0,1
+    abstract_flg: Series[int] = pa.Field(isin=[0,1],nullable=True) # 0,1
+    period_start: Series[str] = pa.Field(nullable=True)
+    period_end: Series[str] = pa.Field(nullable=True)
+    instant_date: Series[str] = pa.Field(nullable=True)
+    #end_date_pv: Series[str] = pa.Field(nullable=True)
+    #instant_date_pv: Series[str] = pa.Field(nullable=True)
+    #scenario: Series[str] = pa.Field(nullable=True)
+    role: Series[str] = pa.Field(nullable=True)
+    label_jp: Series[str] = pa.Field(nullable=True)
+    order: Series[float] = pa.Field(nullable=True)
+    #child_key: Series[str] = pa.Field(nullable=True)
+    docid: Series[str] = pa.Field(nullable=True)
+    non_consolidated_flg: Series[int] = pa.Field(isin=[0,1],nullable=True) # 0,1
+    current_flg: Series[int] = pa.Field(isin=[0,1],nullable=True) # 0,1
+    prior_flg: Series[int] = pa.Field(isin=[0,1],nullable=True) # 0,1
 
 
 
-def get_fs_tbl(account_list_common_obj,docid,zip_file_str,temp_path_str,role_keyward_list):
+def get_fs_tbl(account_list_common_obj,docid:str,zip_file_str:str,temp_path_str:str,role_keyward_list:list)->fs_data:
     linkbasefile_obj = linkbasefile(
         zip_file_str=zip_file_str,
         temp_path_str=temp_path_str
@@ -43,130 +92,27 @@ def get_fs_tbl(account_list_common_obj,docid,zip_file_str,temp_path_str,role_key
         out_path=temp_path_str,
         update_flg=False
         )
-    #role_keyward_list = []
-    for role_t in role_keyward_list:
-        role_list = [role_key for role_key in list(linkbasefile_obj.account_tbl_role_dict.keys()) if role_t in role_key]
     data_list = []
-    for role in role_list:
-        key_in_the_rol:pd.Series = linkbasefile_obj.account_tbl_role_dict[role].key
+    for role in list(linkbasefile_obj.account_tbl_role_dict.keys()):
+        key_in_the_role:pd.Series = linkbasefile_obj.account_tbl_role_dict[role].key
         data=pd.merge(
             xbrl_data_df.query("key in @key_in_the_role"),
             linkbasefile_obj.account_tbl_role_dict[role],
             on='key',
-            how='left')#.query("not key.str.contains('Abstract')")
+            how='left')
         data = data.assign(docid=docid,role=role)
         
-        data.assign(
-            non_consolidated_flg=data.context_ref.str.contains('NonConsolidated'),
-            current_flg=data.context_ref.str.contains('CurrentYear'),
-            prior_flg=data.context_ref.str.contains('Prior1Year')
-            
+        data = data.assign(
+            non_consolidated_flg=data.context_ref.str.contains('NonConsolidated').astype(int),
+            current_flg=data.context_ref.str.contains('CurrentYear').astype(int),
+            prior_flg=data.context_ref.str.contains('Prior1Year').astype(int)
         )
+        data['label_jp'] = data.label_jp.fillna('-')
+        data = data.query("(not (non_consolidated_flg==1 and role.str.contains('_Consolidated'))) and (not (non_consolidated_flg==0 and (not role.str.contains('_Consolidated') and not (role.str.contains('_CabinetOfficeOrdinanceOnDisclosure')))))")
         data_list.append(data)
-    return pd.concat(data_list)
+    return fs_data(pd.concat(data_list)[get_columns_df(fs_data)])
 
 
-class fs_tbl_loader():
-    def __init__(self,account_list_common_obj,docid,zip_file_str,temp_path_str,role_label_list=['BS','PL','CF','SS','NOTES'],role_list=[]):
-        self.linkbasefile_obj = linkbasefile(
-            zip_file_str=zip_file_str,
-            temp_path_str=temp_path_str
-            )
-        with timer("read_linkbase_file"):
-            self.linkbasefile_obj.read_linkbase_file()
-        self.linkbasefile_obj.check()
-        self.linkbasefile_obj.make_account_label(account_list_common_obj,role_label_list,role_list)
-        self.docid = docid
-        with timer("get_xbrl_rapper"):
-            self.xbrl_data_df,self.log_dict = get_xbrl_rapper(
-                docid=docid,
-                zip_file=zip_file_str,
-                temp_dir=temp_path_str,
-                out_path=temp_path_str,
-                update_flg=False)
-        self.cnt_dict = {
-            "cnt_current_non_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('CurrentYear') and (not context_ref.str.contains('NonConsolidated'))")),
-            "cnt_current_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('CurrentYear') and context_ref.str.contains('NonConsolidated')")),
-            "cnt_prior_non_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('Prior1Year') and (not context_ref.str.contains('NonConsolidated'))")),
-            "cnt_prior_consolidated": len(self.xbrl_data_df.query("context_ref.str.contains('Prior1Year') and context_ref.str.contains('NonConsolidated')")),
-            "all": len(self.xbrl_data_df)
-        }
-    def get_data_from_key(self,key_list:list,term='current',Consolidated=True):
-        """keyごとに取得"""
-        #data_list = []
-        if Consolidated:
-            if term == 'current':
-                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('CurrentYear') and (not context_ref.str.contains('NonConsolidated'))")
-            elif term == 'prior':
-                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('Prior1Year') and (not context_ref.str.contains('NonConsolidated'))")
-            elif term == 'all':
-                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and (not context_ref.str.contains('NonConsolidated'))")
-        else:
-            if term == 'current':
-                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('CurrentYear') and context_ref.str.contains('NonConsolidated')")
-            elif term == 'prior':
-                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('Prior1Year') and context_ref.str.contains('NonConsolidated')")
-            elif term == 'all':
-                xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_list and context_ref.str.contains('NonConsolidated')")
-                
-        data=pd.merge(
-            xbrl_data_ext_df,
-            self.linkbasefile_obj.account_tbl_role_dict[role],
-            on='key',
-            how='left')#.query("not key.str.contains('Abstract')")
-        data = data.assign(docID=self.docid,role=role)
-        #data_list.append(data)
-        return data#pd.concat(data_list)
-
-    def get_data(self,doc_name='BS',term='current',Consolidated=True):
-        """roleまとめて取得"""
-        assert doc_name in ['BS','PL','CF','SS','NOTES','report'],"doc_name should be one of ['BS','PL','CF','SS','NOTES']"
-        assert term in ['current','prior','all'],"term should be one of ['current','prior','all']"
-        assert isinstance(Consolidated,bool),"Consolidated should be boolean"
-    
-        fs_dict={
-                'BS':["_BalanceSheet","_ConsolidatedBalanceSheet"],
-                'PL':["_StatementOfIncome","_ConsolidatedStatementOfIncome"],
-                'CF':["_StatementOfCashFlows","_ConsolidatedStatementOfCashFlows"],
-                'SS':["_StatementOfChangesInEquity","_ConsolidatedStatementOfChangesInEquity"],
-                'NOTES':["_Notes","_ConsolidatedNotes"],
-                'report':["_CabinetOfficeOrdinanceOnDisclosure"]}
-        #fs_dict={
-        #    'BS':"_BalanceSheet",
-        #    'PL':"_StatementOfIncome",
-        #    'CF':"_StatementOfCashFlows",
-        #    'SS':"_StatementOfChangesInEquity",
-        #    'NOTES':"_Notes"}
-        role_list = []
-        for role_t in fs_dict[doc_name]:
-            role_list = [role_key for role_key in list(self.linkbasefile_obj.account_tbl_role_dict.keys()) if role_t in role_key]
-        data_list = []
-        for role in role_list:
-            key_in_the_role = self.linkbasefile_obj.account_tbl_role_dict[role].key
-            print(len(key_in_the_role))
-            # TODO: context_ref == FilingDateInstantの処理
-            if Consolidated:
-                if term == 'current':
-                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('CurrentYear') and (not context_ref.str.contains('NonConsolidated'))")
-                elif term == 'prior':
-                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('Prior1Year') and (not context_ref.str.contains('NonConsolidated'))")
-                elif term == 'all':
-                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and (not context_ref.str.contains('NonConsolidated'))")
-            else:
-                if term == 'current':
-                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('CurrentYear') and context_ref.str.contains('NonConsolidated')")
-                elif term == 'prior':
-                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('Prior1Year') and context_ref.str.contains('NonConsolidated')")
-                elif term == 'all':
-                    xbrl_data_ext_df = self.xbrl_data_df.query("key in @key_in_the_role and context_ref.str.contains('NonConsolidated')")
-            data=pd.merge(
-                xbrl_data_ext_df,
-                self.linkbasefile_obj.account_tbl_role_dict[role],
-                on='key',
-                how='left')#.query("not key.str.contains('Abstract')")
-            data = data.assign(docID=self.docid,role=role)
-            data_list.append(data)
-        return pd.concat(data_list)
 
 class linkbasefile():
     def __init__(self,zip_file_str:str,temp_path_str:str):
@@ -208,82 +154,52 @@ class linkbasefile():
         c_key_set = set(self.parent_child_df.child_key)
         #print(len(c_key_set))
         all_key_set = set(self.account_list.key)
-        assert len(p_key_set-all_key_set) == 0
-        assert len(c_key_set-all_key_set) == 0
+        if len(p_key_set-all_key_set) != 0:
+            print("parent key in arc-link that is not included in locator: \n{}".format(str(p_key_set-all_key_set)))
+        if len(c_key_set-all_key_set) != 0:
+            print("child key in arc-link that is not included in locator: \n{}".format(str(p_key_set-all_key_set)))
         #print(len(set(self.account_list.label)))
-        assert len(set(self.label_tbl_jp.key) - all_key_set) == 0
+        if len(set(self.label_tbl_jp.key) - all_key_set) != 0:
+            print("key in label that is not included in locator: \n{}".format(str(set(self.label_tbl_jp.key) - all_key_set)))
 
     def make_account_label(self,account_list_common_obj,role_list,role_label_list=[]):
         account_label_org = self.make_account_label_org()
         account_label_common = self.make_account_label_common(account_list_common_obj)
         account_label = pd.concat([account_label_org,account_label_common],axis=0)
-        with timer("make_account_tbl"):
-            account_tbl = pd.merge(
-                self.account_list[['key','role']],
-                account_label[['label_jp']],
-                left_on='key',
-                right_index=True,
-                how='left')
-        with timer("make_account_link_tracer"):
-            self.account_link_tracer_obj = account_link_tracer(self.parent_child_df)
+        account_tbl = pd.merge(
+            self.account_list[['key','role']],
+            account_label[['label_jp']],
+            left_on='key',
+            right_index=True,
+            how='left')
+        self.account_link_tracer_obj = account_link_tracer(self.parent_child_df)
         
-        with timer("make_account_tbl_role_dict"):
-            fs_dict={
-                'BS':["_BalanceSheet","_ConsolidatedBalanceSheet"],
-                'PL':["_StatementOfIncome","_ConsolidatedStatementOfIncome"],
-                'CF':["_StatementOfCashFlows","_ConsolidatedStatementOfCashFlows"],
-                'SS':["_StatementOfChangesInEquity","_ConsolidatedStatementOfChangesInEquity"],
-                'NOTES':["_Notes","_ConsolidatedNotes"],
-                'report':["_CabinetOfficeOrdinanceOnDisclosure"]}
-            role_list_all = list(set(self.parent_child_df.role))
-            role_list_f = []
-            if len(role_label_list)>0:
-                for role_to_get in role_label_list:
-                    for role_t in fs_dict[role_to_get]:
-                        role_list_f = role_list_f + [role_key for role_key in role_list_all if role_t in role_key]
-            else:
-                role_list_f = role_list_all
+        role_list_all = list(set(self.parent_child_df.role))
             
-            if len(role_list)>0:
-                # role_list が優先される
-                role_list_f = []
-                for role_t in role_list:
-                    role_list_f = role_list_f + [role_key for role_key in role_list_all if role_t in role_key]
-
-            account_tbl_role_dict = {}
-            for role_text in role_list_f:
-                role_suffix = role_text.split('/')[-1]
-                account_tbl_of_the_role = account_tbl.query("role.str.contains(@role_suffix)").drop_duplicates()
-                account_tbl_of_the_role = pd.merge(
-                    account_tbl_of_the_role,
-                    self.account_link_tracer_obj.get_child_order_recursive_list(
-                        key_list=account_tbl_of_the_role.key.to_list(),
-                        role=role_text
-                    )[['order','child_key']],
-                    left_on='key',
-                    right_on='child_key',
-                    how='left')
-                account_tbl_of_the_role.order.fillna(1,inplace=True)
-                account_tbl_of_the_role.sort_values('order')
-                account_tbl_role_dict.update({role_suffix:account_tbl_of_the_role})
+        if len(role_list)>0:
+            # role_list が優先される
+            role_list_f = []
+            for role_t in role_list:
+                role_list_f = role_list_f + [role_key for role_key in role_list_all if role_t in role_key]
+        else:
+            role_list_f = role_list_all
+        account_tbl_role_dict = {}
+        for role_text in role_list_f:
+            role_suffix = role_text.split('/')[-1]
+            account_tbl_of_the_role = account_tbl.query("role.str.contains(@role_suffix)").drop_duplicates()
+            account_tbl_of_the_role = pd.merge(
+                account_tbl_of_the_role,
+                self.account_link_tracer_obj.get_child_order_recursive_list(
+                    key_list=account_tbl_of_the_role.key.to_list(),
+                    role=role_text
+                )[['order','child_key']],
+                left_on='key',
+                right_on='child_key',
+                how='left')
+            account_tbl_of_the_role.order.fillna(1,inplace=True)
+            account_tbl_of_the_role.sort_values('order')
+            account_tbl_role_dict.update({role_suffix:account_tbl_of_the_role})
         self.account_tbl_role_dict = account_tbl_role_dict
-
-        #pl_account=account_tbl.query("role.str.contains('StatementOfIncome')").drop_duplicates()
-        #bs_account=account_tbl.query("role.str.contains('BalanceSheet')").drop_duplicates()
-
-        #role_text="http://disclosure.edinet-fsa.go.jp/role/jppfs/rol_StatementOfIncome"
-        #pl_account_tbl=pd.merge(
-        #    pl_account,
-        #    self.account_link_tracer_obj.get_child_order_recursive_list(
-        #        key_list=pl_account.key.to_list(),
-        #        role=role_text
-        #    )[['order','child_key']],
-        #    left_on='key',
-        #    right_on='child_key',
-        #    how='left')
-        #pl_account_tbl.order.fillna(1,inplace=True)
-        #self.pl_account_tbl=pl_account_tbl.sort_values('order')
-        #role_text="http://disclosure.edinet-fsa.go.jp/role/jppfs/rol_StatementOfIncome"
 
     def make_account_label_org(self):
         df=self.label_tbl_jp.query("role == 'label'").set_index("key").rename(columns={"text":"label_jp"})
@@ -292,11 +208,11 @@ class linkbasefile():
             self.label_tbl_eng.query("role == 'label'").set_index("key")[['text']].rename(columns={"text":"label_eng"}),
             self.label_tbl_eng.query("role == 'verboseLabel'").set_index("key")[['text']].rename(columns={"text":"label_eng_long"})
         ],how="left")
-        print("org",len(df))
+        #print("org",len(df))
         return df
     
     def make_summary_tbl(self):
-        df=pd.DataFrame(index=list(set(self.account_list.key)))
+        df = pd.DataFrame(index=list(set(self.account_list.key)))
         df = df.assign(
             is_parent=df.index.isin(self.parent_child_df.parent_key),
             is_child=df.index.isin(self.parent_child_df.child_key),
@@ -327,6 +243,6 @@ class linkbasefile():
         #label_to_taxonomi_dict=self.get_presentation_account_list_obj.export_label_to_taxonomi_dict()
         
         account_label_common = account_list_common_obj.get_assign_common_label()
-        print("common:",len(account_label_common))
+        #print("common:",len(account_label_common))
         return account_label_common
         

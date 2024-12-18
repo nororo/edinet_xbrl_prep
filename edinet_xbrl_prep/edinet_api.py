@@ -320,7 +320,7 @@ def request_term(api_key:str, start_date_str:str,end_date_str:str)->list:
 
     sleep(1)
     res_results = []
-    for itr in range(0,(end_date-start_date).days+1):
+    for itr in tqdm(range(0,(end_date-start_date).days+1)):
 
         target_date = start_date + timedelta(days=itr)
         input_dict = {
@@ -330,7 +330,7 @@ def request_term(api_key:str, start_date_str:str,end_date_str:str)->list:
         }
         params = EdinetMetadataInputV2(**input_dict)
         res_results.append(get_edinet_metadata(params))
-        sleep(1)
+        sleep(0.5)
     return res_results
 # %% doc
 
@@ -377,50 +377,4 @@ def request_doc(api_key,docid:str,out_filename_str:str)->RequestResponseDoc:
     result = RequestResponseDoc(**result_temp)
     return result
 
-# %% memo
-def request_term2(api_key:str, start_date_str:str='2024/07/20', end_date_str:str='2024/07/27')->list:
-    start_date = datetime.datetime.strptime(start_date_str,"%Y/%m/%d")
-    end_date = datetime.datetime.strptime(end_date_str,"%Y/%m/%d")
 
-    sleep(1)
-    res_results = []
-    for itr in range(0,(end_date-start_date).days):
-
-        target_date = start_date + datetime.timedelta(days=itr)
-        params = {
-            "date" : target_date.strftime("%Y-%m-%d"),
-            "type" : 2,
-            "Subscription-Key":api_key
-        }
-        res_results.append(get_edinet_metadata(params))
-        sleep(1)
-    return res_results
-
-def get_edinet_metadata2(params):
-    # EDINET API version 1
-    #EDINET_API_url = "https://disclosure.edinet-fsa.go.jp/api/v2/documents.json"
-    # EDINET API version 2
-    EDINET_API_url = "https://api.edinet-fsa.go.jp/api/v2/documents.json"
-    
-    retry = requests.adapters.Retry(connect=5, read=3)
-    session = requests.Session()
-    session.mount("http://", requests.adapters.HTTPAdapter(max_retries=retry))
-
-    result = {"date": params['date'], "status": None, "data": None}
-    res = session.get(EDINET_API_url, params=params, verify=False, timeout=(20, 30))
-        
-    if res.status_code == 200:
-        result["status"] = "Success"
-        try:
-            res_parsed = json.loads(res.text)
-            result["data"] = pd.read_json(json.dumps(res_parsed['results']), dtype=EdinetResponse.to_schema().columns)
-        except json.JSONDecodeError as e:
-            result["status"] = f"JSON Decoding Error: {str(e)}"
-            pass
-        except Exception as e:
-            result["status"] = f"Error: {str(e)}"
-            pass
-    else:
-        result["status"] = f"Failure: {res.status_code}"
-    
-    return result

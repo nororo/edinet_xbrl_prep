@@ -27,7 +27,7 @@ def fill_df(data_df):
     merged = merged.sort_values(by=['docid','data'])
     merged = merged.assign(
         decimals=merged.decimals.fillna(method='ffill'),
-        precision=merged.precision.fillna(method='ffill'),
+        #precision=merged.precision.fillna(method='ffill'),
         context_ref=merged.context_ref.fillna(method='ffill'),
         unit=merged.unit.fillna(method='ffill'),
         period_start=merged.period_start.fillna(method='ffill'),

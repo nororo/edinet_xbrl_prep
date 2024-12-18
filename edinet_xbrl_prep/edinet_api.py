@@ -1,10 +1,5 @@
 """
 
-### req
-pandas
-requests
-tqdm
-pandera
 """
 
 # %% Requirements
@@ -18,13 +13,12 @@ from time import sleep
 import warnings
 from tqdm import tqdm
 from pathlib import Path
-#PROJPATH=r"/Users/noro/Documents/Projects/XBRL_common_space_projection/"
 from pydantic import BaseModel
 
 import pandera as pa
 from pandera.typing import DataFrame, Series
 from pydantic import ConfigDict
-
+from pydantic import validate_call
 
 from datetime import datetime, timedelta, date
 from pydantic import BaseModel, Field,SecretStr
@@ -36,14 +30,15 @@ from pydantic.functional_validators import BeforeValidator
 
 
 
-# %%
+# Allowing None str type
 StrOrNone = Annotated[str, BeforeValidator(lambda x: x or "")]
 
 def get_columns(schima):
     return list(schima.model_json_schema()['properties'].keys())
 
 class EdinetResponse(BaseModel):
-    """
+    """書類一覧APIのレスポンススキーマ
+
     access_date: アクセス日
     seqNumber: 同日に提出された書類に提出時間順につく番号 YYYY/MM/DD-senCumberが提出順序情報になる
     docID: filename
@@ -77,7 +72,6 @@ class EdinetResponse(BaseModel):
     
     参考: 11_EDINET_API仕様書（version 2）.pdfより
     """
-    #model_config = ConfigDict(arbitrary_types_allowed=True)
     access_date: date = Field(..., title="access date", description="access date")
     seqNumber: int =Field(..., title="seq number", description="The number YYYY/MM/DD-senCumber, which is given to documents submitted on the same day in the order of submission time, becomes the submission order information.")
     docID: StrOrNone = Field("", title="document id", description="filename of document (docID.zip)")
@@ -111,8 +105,40 @@ class EdinetResponse(BaseModel):
 
 
 class EdinetResponseList(BaseModel):
-    """
-    edinet_response_schimaのリスト
+    """書類一覧APIのレスポンススキーマのリスト
+    以下からなるedinet_response_schimaのリスト
+        access_date: アクセス日
+        seqNumber: 同日に提出された書類に提出時間順につく番号 YYYY/MM/DD-senCumberが提出順序情報になる
+        docID: filename
+        edinetCode: EDINETコード
+        secCode: 証券コード
+        JCN: 法人番号
+        filerName: 提出者名
+        fundCode: ファンドコード
+        ordinanceCode: 政令コード
+        formCode: 様式コード
+        docTypeCode: 書類種別コード
+        periodStart: 開始期間
+        periodEnd: 終了期間
+        submitDateTime: 書類提出日時 
+        docDescription: EDINET の閲覧サイトの書類検索結果画面において、「提出書類」欄に表示される文字列
+        issuerEdinetCode: 発行会社EDINETコード大量保有について発行会社のEDINETコード
+        subjectEdinetCode: 公開買付けについて対象となるEDINETコード
+        subsidiaryEdinetCode: 子会社のEDINETコードが出力されます。複数存在する場合(最大10個)、","(カンマ)で結合した文字列が出力
+        currentReportReason: 臨報提出事由、臨時報告書の提出事由が出力されます。複数存在する場合、","(カンマ)で結合した文字列が出力
+        parentDocID: 親書類管理番号
+        opeDateTime: 「2-1-6 財務局職員による書類情報修正」、「2-1-7 財務局職員による書類の不開示」、磁気ディスク提出及び紙面提出を行った日時が出力
+        withdrawalStatus: 取下書は"1"、取り下げられた書類は"2"、それ以外は"0"が出力
+        docInfoEditStatus: 財務局職員が書類を修正した情報は"1"、修正された書類は"2"、それ以外は"0"が出力
+        disclosureStatus: 財務局職員によって書類の不開示を開始した情報は"1"、不開示とされている書類は"2"、財務局職員によって書類の不開示を解除した情報は"3"、それ以外は"0"が出力
+        xbrlFlag: 書類にXBRLがある場合は"1"それ以外0
+        pdfFlag: 書類にPDFがある場合は"1"それ以外0
+        attachDocFlag: 書類に代替書面・添付文書がある場合:1 それ以外:0
+        englishDocFlag: 書類に英文ファイルがある場合1
+        csvFlag: 書類にcsvがある場合1
+        legalStatus: "1":縦覧中 "2":延長期間中(法定縦覧期間満了書類だが引き続き閲覧可能。) "0":閲覧期間満了(縦覧期間満了かつ延長期間なし、延長期間満了又は取下げにより閲覧できないもの。なお、不開示は含まない。)
+    
+    参考: 11_EDINET_API仕様書（version 2）.pdfより
     """
     data: list[EdinetResponse]
 
@@ -137,11 +163,11 @@ class DateNormalizer(BaseModel):
         return self.date_norm#.strftime('%Y/%m/%d')
 
 
-
+@validate_call(validate_return=True)
 def get_edinet_metadata(params: EdinetMetadataInputV2) -> RequestResponse:
-    # EDINET API version 1
-    #EDINET_API_url = "https://disclosure.edinet-fsa.go.jp/api/v2/documents.json"
-    # EDINET API version 2
+    """
+    EDINET APIの書類一覧APIを利用して書類一覧を取得する
+    """
     EDINET_API_url = "https://api.edinet-fsa.go.jp/api/v2/documents.json"
     
     retry = requests.adapters.Retry(connect=5, read=3)
@@ -149,7 +175,7 @@ def get_edinet_metadata(params: EdinetMetadataInputV2) -> RequestResponse:
     session.mount("http://", requests.adapters.HTTPAdapter(max_retries=retry))
 
     res = session.get(EDINET_API_url, params=params.export(), verify=False, timeout=(20, 30))
-    result_temp = {"date_res": params.date_api_param}
+    result_temp = {"date_res": params.date_api_param,"status": "success","data": [],"message":None}
     
     if res.status_code == 200:
         result_temp["status"] = "success"
@@ -180,7 +206,7 @@ def get_edinet_metadata(params: EdinetMetadataInputV2) -> RequestResponse:
 
 class EdinetResponseDf(pa.DataFrameModel):
     """
-    access_date
+    access_date: データ取得日
     seqNumber: 同日に提出された書類に提出時間順につく番号 YYYY/MM/DD-senCumberが提出順序情報になる
     docID: filename
     edinetCode: EDINETコード
@@ -213,7 +239,6 @@ class EdinetResponseDf(pa.DataFrameModel):
     
     参考: 11_EDINET_API仕様書（version 2）.pdfより
     """
-    #model_config = ConfigDict(arbitrary_types_allowed=True)
     access_date: Series[date] = pa.Field(nullable=False) # access date
     seqNumber: Series[int] # 同日に提出された書類に提出時間順につく番号 YYYY/MM/DD-senCumberが提出順序情報になる
     docID: Series[str] # filename
@@ -244,22 +269,31 @@ class EdinetResponseDf(pa.DataFrameModel):
     englishDocFlag: Series[str] = pa.Field(isin=['0','1']) # 書類に英文ファイルがある場合: 1
     csvFlag: Series[str] = pa.Field(isin=['0','1']) # 書類にcsvがある場合1
     legalStatus: Series[str] = pa.Field(isin=['0','1','2']) # "1":縦覧中 "2":延長期間中(法定縦覧期間満了書類だが引き続き閲覧可能。) "0":閲覧期間満了(縦覧期間満了かつ延長期間なし、延長期間満了又は取下げにより閲覧できないもの。なお、不開示は含まない。)
+    sector_label_33: Series[str] = pa.Field(nullable=True) # 33業種区分
 
+    def __len__(self):
+        return len(self.index)
 
 class edinet_response_metadata():
-    def __init__(self,filename=None,tse_sector_url:str=None,tmp_path:str=None):
+    """
+    書類一覧APIのレスポンススキーマのリストを保持するクラス
+    """
+    def __init__(self,filename=None,tse_sector_url:str=None,tmp_path_str:str=None):
         if filename:
             self.read_jsonl(filename)
         if tse_sector_url:
             self.tse_sector_url = tse_sector_url
-            self.tmp_path = tmp_path
+            self.tmp_path = Path(tmp_path_str)
 
     def save(self,filename:str):
-        #out_filename = DATA_PATH/"data.jsonl"
+        """
+        jsonl形式で保存
+        """
         with open(filename, 'w') as file:
             for obj in self.data:
                 file.write(obj.model_dump_json() + '\n')
     def read_jsonl(self,filename:str):
+        """jsonl形式のファイルを読み込む"""
         response_metadata = []
         with open(filename, 'r') as file:
             data = file.readlines()
@@ -271,19 +305,19 @@ class edinet_response_metadata():
                     print(line_json["message"])
         self.data: list[EdinetResponse]= response_metadata
     
-    def load(self,filename):
-        res_results=self.read_jsonl(filename)
-        data_list=[]
-        for res in res_results:
-            if res.status == "success":
-                data_list=data_list+res.data
-        return data_list
+    #def load(self,filename):
+    #    res_results=self.read_jsonl(filename)
+    #    data_list=[]
+    #    for res in res_results:
+    #        if res.status == "success":
+    #            data_list=data_list+res.data
+    #    return data_list
     
     def set_data(self,data):
         self.data: list[EdinetResponse]=data
     
-    def get_metadata_pandas_df(self)->EdinetResponseDf:
-        return EdinetResponseDf(pd.concat([pd.DataFrame(data.model_dump()['data']) for data in self.data]).reset_index())
+    def get_metadata_pandas_df(self)->pd.DataFrame:
+        return pd.concat([pd.DataFrame(data.model_dump()['data']) for data in self.data]).reset_index()
     
     def get_yuho_df(self)->EdinetResponseDf:
         df = self.get_metadata_pandas_df()
@@ -304,21 +338,22 @@ class edinet_response_metadata():
                 left_on='secCode',
                 right_on='secCode',
                 how='left')
-        return df_f
+        return EdinetResponseDf(df_f)
 
     #def get_teisei_yuho_df(self)->EdinetResponseDf:
     #    df = self.get_metadata_pandas_df()
     #    return df.query("docTypeCode=='130' and ordinanceCode == '010' and formCode == '030001' and docInfoEditStatus !='2'")
 
-
-
-def request_term(api_key:str, start_date_str:str,end_date_str:str)->list:
+def request_term(api_key:str, start_date_str:str,end_date_str:str)->EdinetResponseList:
+    """
+    書類一覧APIを利用して開始日と終了日を含む期間の書類一覧を取得します。
+        start_date_str: 開始日(YYYY-MM-DD)
+        end_date_str: 終了日(YYYY-MM-DD)
+    """
 
     start_date = DateNormalizer(date_norm=start_date_str).export_date()
     end_date = DateNormalizer(date_norm=end_date_str).export_date()
-    # datetime.datetime.strptime(end_date_str,"%Y/%m/%d")
 
-    sleep(1)
     res_results = []
     for itr in tqdm(range(0,(end_date-start_date).days+1)):
 
@@ -341,10 +376,12 @@ class EdinetDocInputV2(BaseModel):
         return {"type": self.type_api_param, "Subscription-Key": self.api_key}
 
 class RequestResponseDoc(BaseModel):
+    docid: str = Field(..., title="docid", description="docid")
     data_path: StrOrNone = Field(default="", title="data path", description="data path")
     status: Literal['success','failure'] = Field('succsess', title="result", description="Success or Failure")
     message: StrOrNone = Field(default="", title="message", description="message")
 
+@validate_call(validate_return=True)
 def request_doc(api_key,docid:str,out_filename_str:str)->RequestResponseDoc:
     # EDINET API version 2
     out_filename_path = Path(out_filename_str)
@@ -357,7 +394,7 @@ def request_doc(api_key,docid:str,out_filename_str:str)->RequestResponseDoc:
         "api_key": api_key
     }
     params = EdinetDocInputV2(**input_dict)
-    result_temp = {"docid": docid}
+    result_temp = {"docid": docid, "status": "success", "data_path": None, "message": None}
     try:
         res = session.get(EDINET_API_url, params=params.export(), verify=False, timeout=(20, 90))
         if res.status_code == 200:

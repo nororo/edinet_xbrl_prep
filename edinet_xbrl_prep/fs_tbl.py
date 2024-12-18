@@ -1,4 +1,6 @@
-
+"""
+財務情報をまとめてpandas.DataFrameで出力するモジュール
+"""
 
 
 import xml.etree.ElementTree as ET
@@ -25,35 +27,36 @@ from .link_base_file_analyzer import *
 from .utils import *
 
 
-class fs_data(pa.DataFrameModel):
+
+class FsDataDf(pa.DataFrameModel):
     #ParentChildLink
     """
     'key': taxonomy like 'jpcrp_cor:NetSales'
     'data_str': data (string) like '1000000'
     'decimals': 3桁の表示
     'precision': ???
-    'context_ref' # T:-3, M:-6, B:-9
-    'element_name'
-    'unit' # JPY
-    'period_type'
-    'isTextBlock_flg'
-    'abstract_flg'
-    'period_start' # durationの場合 当期末日, instantの場合 None
-    'period_end' # durationの場合 当期末日, instantの場合 当期末日
-    'instant_date' # durationの場合 None, instantの場合 当期末日
-    'end_date_pv' # durationの場合 前期末日, instantの場合 None
-    'instant_date_pv' # durationの場合 None, instantの場合 前期対象日
-    'scenario'
-    'role'
-    'label_jp'
-    'order'
-    'child_key'
-    'docid']
+    'context_ref': # T:-3, M:-6, B:-9
+    'element_name':
+    'unit': # JPY
+    'period_type':
+    'isTextBlock_flg':
+    'abstract_flg':
+    'period_start': # durationの場合 当期末日, instantの場合 None
+    'period_end': # durationの場合 当期末日, instantの場合 当期末日
+    'instant_date': # durationの場合 None, instantの場合 当期末日
+    'end_date_pv': # durationの場合 前期末日, instantの場合 None
+    'instant_date_pv': # durationの場合 None, instantの場合 前期対象日
+    'scenario':# シナリオ
+    'role': #
+    'label_jp':
+    'order':
+    'child_key':
+    'docid':
     """
     key: Series[str] = pa.Field(nullable=True)
     data_str: Series[str] = pa.Field(nullable=True)
     decimals: Series[str] = pa.Field(nullable=True)
-    precision: Series[str] = pa.Field(nullable=True)
+    #precision: Series[str] = pa.Field(nullable=True)
     context_ref: Series[str] = pa.Field(nullable=True)
     element_name: Series[str] = pa.Field(nullable=True)
     unit: Series[str] = pa.Field(nullable=True)
@@ -63,9 +66,9 @@ class fs_data(pa.DataFrameModel):
     period_start: Series[str] = pa.Field(nullable=True)
     period_end: Series[str] = pa.Field(nullable=True)
     instant_date: Series[str] = pa.Field(nullable=True)
-    #end_date_pv: Series[str] = pa.Field(nullable=True)
-    #instant_date_pv: Series[str] = pa.Field(nullable=True)
-    #scenario: Series[str] = pa.Field(nullable=True)
+    end_date_pv: Series[str] = pa.Field(nullable=True)
+    instant_date_pv: Series[str] = pa.Field(nullable=True)
+    scenario: Series[str] = pa.Field(nullable=True)
     role: Series[str] = pa.Field(nullable=True)
     label_jp: Series[str] = pa.Field(nullable=True)
     order: Series[float] = pa.Field(nullable=True)
@@ -77,7 +80,7 @@ class fs_data(pa.DataFrameModel):
 
 
 
-def get_fs_tbl(account_list_common_obj,docid:str,zip_file_str:str,temp_path_str:str,role_keyward_list:list)->fs_data:
+def get_fs_tbl(account_list_common_obj,docid:str,zip_file_str:str,temp_path_str:str,role_keyward_list:list)->FsDataDf:
     linkbasefile_obj = linkbasefile(
         zip_file_str=zip_file_str,
         temp_path_str=temp_path_str
@@ -88,8 +91,8 @@ def get_fs_tbl(account_list_common_obj,docid:str,zip_file_str:str,temp_path_str:
     xbrl_data_df,log_dict = get_xbrl_rapper(
         docid=docid,
         zip_file=zip_file_str,
-        temp_dir=temp_path_str,
-        out_path=temp_path_str,
+        temp_dir=Path(temp_path_str),
+        out_path=Path(temp_path_str),
         update_flg=False
         )
     data_list = []
@@ -110,7 +113,7 @@ def get_fs_tbl(account_list_common_obj,docid:str,zip_file_str:str,temp_path_str:
         data['label_jp'] = data.label_jp.fillna('-')
         data = data.query("(not (non_consolidated_flg==1 and role.str.contains('_Consolidated'))) and (not (non_consolidated_flg==0 and (not role.str.contains('_Consolidated') and not (role.str.contains('_CabinetOfficeOrdinanceOnDisclosure')))))")
         data_list.append(data)
-    return fs_data(pd.concat(data_list)[get_columns_df(fs_data)])
+    return FsDataDf(pd.concat(data_list)[get_columns_df(FsDataDf)])
 
 
 

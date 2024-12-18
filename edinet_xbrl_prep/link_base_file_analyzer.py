@@ -1,4 +1,6 @@
-
+"""
+リンクベースファイル解析用モジュール
+"""
 import xml.etree.ElementTree as ET
 import re
 from zipfile import ZipFile
@@ -328,6 +330,9 @@ class get_presentation_account_list():
             self.log_dict['get_pre_error_message'] = str(e)
     
     def parse_pre_file(self):
+        """
+        TODO: preferedLabelの取得を追加
+        """
         tree = ET.parse(str(list(self.xml_def_path.glob("*pre.xml"))[0]))
         root = tree.getroot()
         locators = []
@@ -657,6 +662,9 @@ class get_label_common():
 
 
 class account_list_common():
+    """
+    共通タクソノミの取得。主にリンクベースファイルでimportされているlabel情報を取得する。
+    """
     def __init__(self,data_path:str,account_list_year:str):
 
         linkfiles_dict={
@@ -670,16 +678,16 @@ class account_list_common():
         self.temp_path.mkdir(parents=True, exist_ok=True)
         self.taxonomy_path = data_path / ("taxonomy_" + str(account_list_year))
         self.taxonomy_path.mkdir(parents=True, exist_ok=True)
-        self.download_taxonomy()
-        self.path_jpcrp_lab = self.download_jpcrp_lab()
-        self.path_jpcrp_lab_en = self.download_jpcrp_lab_en()
-        self.path_jppfs_lab = self.download_jppfs_lab()
-        self.path_jppfs_lab_en = self.download_jppfs_lab_en()
-        self.path_jpcrp_pre = self.download_jpcrp_pre()
-        self.path_jppfs_pre_list = self.download_jppfs_pre()
-        self.build()
+        self._download_taxonomy()
+        self.path_jpcrp_lab = self._download_jpcrp_lab()
+        self.path_jpcrp_lab_en = self._download_jpcrp_lab_en()
+        self.path_jppfs_lab = self._download_jppfs_lab()
+        self.path_jppfs_lab_en = self._download_jppfs_lab_en()
+        self.path_jpcrp_pre = self._download_jpcrp_pre()
+        self.path_jppfs_pre_list = self._download_jppfs_pre()
+        self._build()
 
-    def download_taxonomy(self):
+    def _download_taxonomy(self):
         download_link_dict = {
             '2024':"https://www.fsa.go.jp/search/20231211/1c_Taxonomy.zip",
             "2023":"https://www.fsa.go.jp/search/20221108/1c_Taxonomy.zip",
@@ -693,7 +701,7 @@ class account_list_common():
             for chunk in r.iter_content(1024):
                 f.write(chunk)
 
-    def download_jpcrp_lab(self):
+    def _download_jpcrp_lab(self):
         already_download_list = list(self.taxonomy_path.glob("jpcrp_{}_lab.xml".format(self.account_list_year)))
         if len(already_download_list)>0:
             return already_download_list[0]
@@ -706,7 +714,7 @@ class account_list_common():
             f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
 
-    def download_jpcrp_lab_en(self):
+    def _download_jpcrp_lab_en(self):
         already_download_list = list(self.taxonomy_path.glob("jpcrp_{}_lab-en.xml".format(self.account_list_year)))
         if len(already_download_list)>0:
             return already_download_list[0]
@@ -719,7 +727,7 @@ class account_list_common():
             f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
     
-    def download_jppfs_lab(self):
+    def _download_jppfs_lab(self):
         already_download_list = list(self.taxonomy_path.glob("jppfs_{}_lab.xml".format(self.account_list_year)))
         if len(already_download_list)>0:
             return already_download_list[0]
@@ -732,7 +740,7 @@ class account_list_common():
             f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
     
-    def download_jppfs_lab_en(self):
+    def _download_jppfs_lab_en(self):
         already_download_list=list(self.taxonomy_path.glob("jpcrp_{}_lab-en.xml".format(self.account_list_year)))
         if len(already_download_list)>0:
             return already_download_list[0]
@@ -745,7 +753,7 @@ class account_list_common():
             f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
 
-    def download_jpcrp_pre(self):
+    def _download_jpcrp_pre(self):
         already_download_list=list(self.taxonomy_path.glob("jpcrp030000-asr_{}_pre.xml".format(self.account_list_year)))
         if len(already_download_list)>0:
             return already_download_list[0]
@@ -758,7 +766,7 @@ class account_list_common():
             f_path = f_path.rename(self.taxonomy_path/f_path.name)
             return f_path
     
-    def download_jppfs_pre(self)->list:
+    def _download_jppfs_pre(self)->list:
         already_download_list=list(self.taxonomy_path.glob("jppfs*_pre_*.xml"))
         
         if len(already_download_list)>500: # 652 files in 2024
@@ -777,7 +785,7 @@ class account_list_common():
             #print("{} files are downloaded".format(len(f_path_new_list)))
             return f_path_new_list
     
-    def build(self):
+    def _build(self):
         self.get_label_common_obj_jpcrp_lab = get_label_common(
             file_str=self.path_jpcrp_lab,
             lang="Japanese"

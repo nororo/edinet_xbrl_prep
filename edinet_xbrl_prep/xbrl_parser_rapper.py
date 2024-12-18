@@ -166,7 +166,7 @@ def get_xbrl_df(xbrl_filename:str,log_dict,temp_dir)->(xbrl_elm_schima,dict):
         ctrl.close()
         return pd.DataFrame(fact_dict_list).drop_duplicates(),log_dict
 
-def get_xbrl_rapper(docid,zip_file,temp_dir,out_path,update_flg=False,log_dict=None):
+def get_xbrl_rapper(docid,zip_file:str,temp_dir:Path,out_path:Path,update_flg=False,log_dict=None):
     if log_dict is None:
         log_dict = {"is_xbrl_file":None, "is_xsd_file":None, "arelle_log_fname":None,"status":None,"error_message":None}
     

@@ -8,7 +8,7 @@ Blog URL:
 https://github.com/nororo/edinet_xbrl_prep/blob/main/xbrl_analysis.ipynb
 
 Google colaboratoryリンク
-https://colab.research.google.com/drive/1GiVRLKrQ5B5XtWN2bFYk73rKSXTBsptG?usp=sharing
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1GiVRLKrQ5B5XtWN2bFYk73rKSXTBsptG?usp=sharing)
 
 
 #### フロー

@@ -1,13 +1,17 @@
 # edinet_xbrl_prep
 
 
-このリポジトリについてはブログ「99から始める有価証券報告書XBRL分析」をご覧ください。
+このリポジトリについてはブログ「99から始める有価証券報告書XBRL分析」をご覧ください。  
 Blog URL:
 
-このリポジトリを利用した分析例
+[99から始める有価証券報告書XBRL分析](https://norororo.hatenablog.com/entry/2024/12/20/081109)
+
+このリポジトリを利用した分析例: 
+
 https://github.com/nororo/edinet_xbrl_prep/blob/main/xbrl_analysis.ipynb
 
-Google colaboratoryリンク
+Google colaboratoryでも同様の分析例を公開しています。
+
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1GiVRLKrQ5B5XtWN2bFYk73rKSXTBsptG?usp=sharing)
 
 

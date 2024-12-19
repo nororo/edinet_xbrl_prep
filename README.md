@@ -1,1 +1,0 @@
-# edinet_xbrl_prep

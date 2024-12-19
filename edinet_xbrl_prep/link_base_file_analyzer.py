@@ -814,7 +814,7 @@ class account_list_common():
             )
             self.label_to_taxonomi_dict.update(get_presentation_common_obj.export_label_to_taxonomi_dict())
         
-        self.assign_common_label()
+        self.assign_common_label(short_label_only=False)
 
     def get_assign_common_label(self):
         return self.assign_common_label_df
@@ -838,8 +838,8 @@ class account_list_common():
             )
             df_jpcrp = df_jpcrp.join([
                 label_tbl_jpcrp_jp.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_jp_long"}),
-                label_tbl_jpcrp_en.query("role == 'label'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_eng"}),
-                label_tbl_jpcrp_en.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_eng_long"})
+                label_tbl_jpcrp_en.query("role == 'label'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_en"}),
+                label_tbl_jpcrp_en.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_en_long"})
                 ],how="left")
         
         label_tbl_jppfs_jp = self.get_label_common_obj_jppfs_lab.export_label_tbl(
@@ -853,8 +853,8 @@ class account_list_common():
             )
             df_jppfs = df_jppfs.join([
                 label_tbl_jppfs_jp.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_jp_long"}),
-                label_tbl_jppfs_en.query("role == 'label'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_eng"}),
-                label_tbl_jppfs_en.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_eng_long"})
+                label_tbl_jppfs_en.query("role == 'label'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_en"}),
+                label_tbl_jppfs_en.query("role == 'verboseLabel'").drop_duplicates(subset='key').set_index("key")[['text']].rename(columns={"text":"label_en_long"})
                 ],how="left")
         self.assign_common_label_df = pd.concat([df_jpcrp,df_jppfs]).drop_duplicates()
 

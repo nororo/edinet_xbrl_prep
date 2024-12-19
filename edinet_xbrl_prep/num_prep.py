@@ -37,7 +37,10 @@ def fill_df(data_df):
         non_consolidated_flg=merged.non_consolidated_flg.fillna(method='ffill'),
         current_flg=merged.current_flg.fillna(method='ffill'),
         prior_flg=merged.prior_flg.fillna(method='ffill'),
-        role=merged.role.fillna(method='ffill')
+        role=merged.role.fillna(method='ffill'),
+        filerName=merged.filerName.fillna(method='ffill'),
+        sector_label_33=merged.sector_label_33.fillna(method='ffill')
+
     )
     merged = merged.sort_values(by=['key','data'])
     merged = merged.assign(

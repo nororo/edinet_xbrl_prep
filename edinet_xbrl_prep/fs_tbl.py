@@ -49,6 +49,9 @@ class FsDataDf(pa.DataFrameModel):
     'scenario':# シナリオ
     'role': #
     'label_jp':
+    'label_jp_long':
+    'label_en':
+    'label_en_long':    
     'order':
     'child_key':
     'docid':
@@ -71,12 +74,16 @@ class FsDataDf(pa.DataFrameModel):
     scenario: Series[str] = pa.Field(nullable=True)
     role: Series[str] = pa.Field(nullable=True)
     label_jp: Series[str] = pa.Field(nullable=True)
+    label_jp_long: Series[str] = pa.Field(nullable=True)
+    label_en: Series[str] = pa.Field(nullable=True)
+    label_en_long: Series[str] = pa.Field(nullable=True)
     order: Series[float] = pa.Field(nullable=True)
     #child_key: Series[str] = pa.Field(nullable=True)
     docid: Series[str] = pa.Field(nullable=True)
     non_consolidated_flg: Series[int] = pa.Field(isin=[0,1],nullable=True) # 0,1
     current_flg: Series[int] = pa.Field(isin=[0,1],nullable=True) # 0,1
     prior_flg: Series[int] = pa.Field(isin=[0,1],nullable=True) # 0,1
+    AccountingStandardsDEI: Series[str] = pa.Field(nullable=True)
 
 
 
@@ -111,6 +118,10 @@ def get_fs_tbl(account_list_common_obj,docid:str,zip_file_str:str,temp_path_str:
             prior_flg=data.context_ref.str.contains('Prior1Year').astype(int)
         )
         data['label_jp'] = data.label_jp.fillna('-')
+        data['label_jp_long'] = data.label_jp_long.fillna('-')
+        data['label_en'] = data.label_en.fillna('-')
+        data['label_en_long'] = data.label_en_long.fillna('-')
+
         data = data.query("(not (non_consolidated_flg==1 and role.str.contains('_Consolidated'))) and (not (non_consolidated_flg==0 and (not role.str.contains('_Consolidated') and not (role.str.contains('_CabinetOfficeOrdinanceOnDisclosure')))))")
         data_list.append(data)
     return FsDataDf(pd.concat(data_list)[get_columns_df(FsDataDf)])
@@ -171,7 +182,7 @@ class linkbasefile():
         account_label = pd.concat([account_label_org,account_label_common],axis=0)
         account_tbl = pd.merge(
             self.account_list[['key','role']],
-            account_label[['label_jp']],
+            account_label[['label_jp','label_jp_long','label_en','label_en_long']],
             left_on='key',
             right_index=True,
             how='left')
@@ -208,8 +219,8 @@ class linkbasefile():
         df=self.label_tbl_jp.query("role == 'label'").set_index("key").rename(columns={"text":"label_jp"})
         df.join([
             self.label_tbl_jp.query("role == 'verboseLabel'").set_index("key")[['text']].rename(columns={"text":"label_jp_long"}),
-            self.label_tbl_eng.query("role == 'label'").set_index("key")[['text']].rename(columns={"text":"label_eng"}),
-            self.label_tbl_eng.query("role == 'verboseLabel'").set_index("key")[['text']].rename(columns={"text":"label_eng_long"})
+            self.label_tbl_eng.query("role == 'label'").set_index("key")[['text']].rename(columns={"text":"label_en"}),
+            self.label_tbl_eng.query("role == 'verboseLabel'").set_index("key")[['text']].rename(columns={"text":"label_en_long"})
         ],how="left")
         #print("org",len(df))
         return df

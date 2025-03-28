@@ -1,0 +1,26 @@
+[project]
+name = "edinet-xbrl-prep"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.12"
+dependencies = [
+    "arelle-release>=2.35.17",
+    "gensim>=4.3.2",
+    "groq>=0.13.1",
+    "ipykernel>=6.29.5",
+    "janome>=0.5.0",
+    "japanize-matplotlib>=1.1.3",
+    "matplotlib-fontja>=1.0.0",
+    "matplotlib>=3.10.0",
+    "pandas>=2.2.3",
+    "pandera>=0.21.1",
+    "requests>=2.32.3",
+    "scikit-learn>=1.6.0",
+    "scipy==1.12",
+    "seaborn>=0.13.2",
+    "setuptools>=75.6.0",
+    "tqdm>=4.67.1",
+    "wordcloud>=1.9.4",
+    "xlrd>=2.0.1",
+]

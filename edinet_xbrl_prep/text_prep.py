@@ -30,7 +30,7 @@ class Prompt(BaseModel):
 from groq import Groq
 
 class ResponseGenAI(BaseModel):
-    output: StrOrNone = Field(..., title="Subscription-Key", description="API Key")
+    output: StrOrNone = Field(..., title="Output", description="Output")
     input_token_size: int = Field(..., title="Input Token Size", description="Input Token Size")
     output_token_size: int = Field(..., title="Output Token Size", description="Output Token Size")
     status: Literal['success','failure'] = Field('failure', title="status", description="status")

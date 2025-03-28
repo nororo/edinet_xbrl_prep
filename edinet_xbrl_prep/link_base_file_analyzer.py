@@ -693,7 +693,13 @@ class account_list_common():
             "2023":"https://www.fsa.go.jp/search/20221108/1c_Taxonomy.zip",
             "2022":"https://www.fsa.go.jp/search/20211109/1c_Taxonomy.zip",
             "2021":"https://www.fsa.go.jp/search/20201110/1c_Taxonomy.zip",
-            "2020":"https://www.fsa.go.jp/search/20191101/1c_Taxonomy.zip"
+            "2020":"https://www.fsa.go.jp/search/20191101/1c_Taxonomy.zip",
+            "2019":"https://www.fsa.go.jp/search/20190228/1c_Taxonomy.zip",
+            "2018":"https://www.fsa.go.jp/search/20180228/1c_Taxonomy.zip",
+            "2017":"https://www.fsa.go.jp/search/20170228/1c.zip",
+            "2016":"https://www.fsa.go.jp/search/20160314/1c.zip",
+            "2015":"https://www.fsa.go.jp/search/20150310/1c.zip",
+            "2014":"https://www.fsa.go.jp/search/20140310/1c.zip"
         }
         
         r = requests.get(download_link_dict[self.account_list_year], stream=True)
@@ -791,7 +797,7 @@ class account_list_common():
             lang="Japanese"
             )
         self.get_label_common_obj_jpcrp_lab_en = get_label_common(
-            file_str=self.path_jpcrp_lab,
+            file_str=self.path_jpcrp_lab_en,
             lang="English"
             )
         self.get_label_common_obj_jppfs_lab = get_label_common(
@@ -799,7 +805,7 @@ class account_list_common():
             lang="Japanese"
             )
         self.get_label_common_obj_jppfs_lab_en = get_label_common(
-            file_str=self.path_jppfs_lab,
+            file_str=self.path_jppfs_lab_en,
             lang="English"
             )
         

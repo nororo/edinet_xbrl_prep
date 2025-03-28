@@ -210,7 +210,7 @@ class linkbasefile():
                 left_on='key',
                 right_on='child_key',
                 how='left')
-            account_tbl_of_the_role.order.fillna(1,inplace=True)
+            account_tbl_of_the_role.order = account_tbl_of_the_role.order.fillna(1)
             account_tbl_of_the_role.sort_values('order')
             account_tbl_role_dict.update({role_suffix:account_tbl_of_the_role})
         self.account_tbl_role_dict = account_tbl_role_dict
@@ -247,6 +247,18 @@ class linkbasefile():
             self.account_list_year="2021"
         elif "2019-11-01" in head_jpcrp:
             self.account_list_year="2020"
+        elif "2019-02-28" in head_jpcrp:
+            self.account_list_year="2019"
+        elif "2018-02-28" in head_jpcrp:
+            self.account_list_year="2018"
+        elif "2017-02-28" in head_jpcrp:
+            self.account_list_year="2017"
+        elif "2016-02-29" in head_jpcrp:
+            self.account_list_year="2016"
+        elif "2015-03-31" in head_jpcrp:
+            self.account_list_year="2015"
+        elif "2013-08-31" in head_jpcrp:
+            self.account_list_year="2014"
         else:
             self.account_list_year="-"
         return self.account_list_year

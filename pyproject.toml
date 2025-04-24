@@ -24,3 +24,12 @@ dependencies = [
     "wordcloud>=1.9.4",
     "xlrd>=2.0.1",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"

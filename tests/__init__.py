@@ -1,0 +1,1 @@
+"""Unit tests for edinet_xbrl_prep package."""

@@ -1,4 +1,9 @@
 .DS_Store
 **/__pycache__/**
 xbrl_analysis_for_develop.ipynb
-uv.lock
+.venv/
+.pytest_cache/
+.ruff_cache/
+tests/.cache/
+tests/results/
+dist/

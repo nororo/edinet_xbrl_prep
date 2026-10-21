@@ -1,16 +1,12 @@
-"""EDINET タクソノミのキャッシュ、そのキャッシュを読む Arelle、勘定科目のラベルの決定。
+"""EDINET taxonomy cache, Arelle reading that cache, and resolution of account labels.
 
-旧版は2つの経路でタクソノミを読んでいた。
-1. ``account_list_common``：金融庁のタクソノミ zip を年度ごとにダウンロードし、共通ラベルを取り出す
-2. Arelle：書類が参照するタクソノミを、利用者のホームの Arelle キャッシュ経由で取得する
+One directory (``TaxonomyCache.cache_dir``) serves as Arelle's web cache. The common labels are read from
+the same directory for the version dates imported by each document.
 
-ここでは1つのディレクトリ（``TaxonomyCache.cache_dir``）を Arelle のキャッシュとして使い、共通ラベルも
-同じディレクトリから、書類が import する版の日付で読む。
-
-- 既定（``offline=False``）では、キャッシュにないファイルを Arelle が EDINET（disclosure.edinet-fsa.go.jp）
-  などから取得してキャッシュに置く。2回目以降はキャッシュを読む
-- ``offline=True`` では、ネットワークに出ずキャッシュだけを読む（再現性を固定したいとき）。
-  キャッシュは、前回の実行で作ったもの、または ``seed_from_taxonomy_zip`` で金融庁の zip から作る
+- By default (``offline=False``), Arelle fetches files missing from the cache from EDINET
+  (disclosure.edinet-fsa.go.jp) and others and stores them in the cache. Later runs read the cache.
+- With ``offline=True``, nothing is fetched and only the cache is read (to fix the inputs for reproducibility).
+  The cache is one built by an earlier run, or one built from an FSA zip with ``seed_from_taxonomy_zip``.
 """
 
 from __future__ import annotations
@@ -28,8 +24,8 @@ from edinet_xbrl_prep.linkbase import parse_labels
 
 EDINET_HOST = "disclosure.edinet-fsa.go.jp"
 
-# 金融庁が公開する EDINET タクソノミ（年度版）の zip。旧版 account_list_common._download_taxonomy の一覧に 2025 を加えた。
-# 2026 年版（2025-11-01）以降は、URL を確かめてから追加する（または download_fsa_taxonomy に url を渡す）
+# EDINET taxonomy zips (by fiscal year) published by the FSA.
+# Add 2026 (2025-11-01) and later after checking the URL (or pass ``url`` to download_fsa_taxonomy).
 FSA_TAXONOMY_URLS = {
     "2025": "https://www.fsa.go.jp/search/20241112/1c_Taxonomy.zip",
     "2024": "https://www.fsa.go.jp/search/20231211/1c_Taxonomy.zip",
@@ -47,12 +43,12 @@ FSA_TAXONOMY_URLS = {
 
 
 class TaxonomyLabelsMissing(FileNotFoundError):
-    """共通タクソノミのラベルファイルがキャッシュにない。"""
+    """The label files of the common taxonomy are not in the cache."""
 
 
 @dataclass(frozen=True)
 class TaxonomyCache:
-    """Arelle と共通ラベルが読むタクソノミのキャッシュ。"""
+    """Taxonomy cache read by Arelle and for the common labels."""
 
     cache_dir: Path
     offline: bool = False
@@ -66,7 +62,7 @@ class TaxonomyCache:
         return self.cache_dir / "http" / EDINET_HOST / "taxonomy"
 
     def controller(self, log_file: Path):
-        """このキャッシュを読む Arelle のコントローラー。"""
+        """Arelle controller that reads this cache."""
         from arelle import Cntlr
 
         controller = Cntlr.Cntlr(logFileName=str(log_file))
@@ -75,16 +71,16 @@ class TaxonomyCache:
         return controller
 
     def label_files(self, module: str, version: str) -> list[Path]:
-        """共通タクソノミ1モジュール・1版のラベルファイル（日本語・英語）。"""
+        """Label files (Japanese and English) of one module and version of the common taxonomy."""
         base = self.edinet_root / module / version / "label"
         return sorted(base.glob(f"{module}_*_lab.xml")) + sorted(base.glob(f"{module}_*_lab-en.xml"))
 
     def common_labels(self, module: str, version: str) -> pd.DataFrame:
-        """共通タクソノミのラベル（列 key, label_role, lang, text）。プロセス内でキャッシュする。"""
+        """Common taxonomy labels (columns key, label_role, lang, text), cached in the process."""
         return _common_labels(str(self.cache_dir), module, version)
 
     def versions(self, module: str = "jpcrp") -> list[str]:
-        """キャッシュにあるモジュールの版の日付。"""
+        """Version dates of a module in the cache."""
         base = self.edinet_root / module
         return sorted(p.name for p in base.iterdir() if p.is_dir()) if base.exists() else []
 
@@ -98,7 +94,7 @@ def _common_labels(cache_dir: str, module: str, version: str) -> pd.DataFrame:
 
 
 def download_fsa_taxonomy(year: str, dest_dir: Path, *, url: str | None = None) -> Path:
-    """金融庁のタクソノミ zip をダウンロードする（すでにあれば何もしない）。"""
+    """Download an FSA taxonomy zip (does nothing if it already exists)."""
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     target = dest_dir / f"taxonomy_{year}.zip"
@@ -116,10 +112,10 @@ def download_fsa_taxonomy(year: str, dest_dir: Path, *, url: str | None = None) 
 
 
 def seed_from_taxonomy_zip(zip_path: Path, cache: TaxonomyCache) -> pd.DataFrame:
-    """金融庁のタクソノミ zip を展開し、Arelle のキャッシュと同じ配置で置く。置いたファイルの一覧を返す。
+    """Extract an FSA taxonomy zip into the Arelle cache layout and return the list of files.
 
-    zip 内のパス（``{フォルダ}/taxonomy/jpcrp/...``）を ``http/disclosure.edinet-fsa.go.jp/taxonomy/jpcrp/...``
-    に置く。すでに同じパスにファイルがあれば上書きしない（一覧の ``placed`` が False）。
+    A path in the zip (``{folder}/taxonomy/jpcrp/...``) is placed at ``http/disclosure.edinet-fsa.go.jp/taxonomy/jpcrp/...``.
+    Existing files are not overwritten (``placed`` is False in the list).
     """
     rows = []
     with ZipFile(zip_path) as zf:
@@ -144,19 +140,12 @@ def seed_from_taxonomy_zip(zip_path: Path, cache: TaxonomyCache) -> pd.DataFrame
     return pd.DataFrame(rows, columns=["path", "sha256", "source", "placed"])
 
 
-# ---------------------------------------------------------------- ラベル
-# 勘定科目のラベル（日本語・英語、標準・冗長）を、1科目1行に決める。
+# ---------------------------------------------------------------- labels
+# Determine one row of labels (Japanese/English, standard/verbose) per account.
 #
-# 取得元と優先順位:
-# 1. 書類の企業別ラベル（ZIP 内の ``_lab.xml``・``_lab-en.xml``）
-# 2. 共通タクソノミのラベル（書類が import する版の jpcrp・jppfs・jpigp。``TaxonomyCache`` から読む）
-#
-# 旧版（``linkbasefile.make_account_label``・``account_list_common.assign_common_label``）との違い:
-# - 企業別の冗長ラベル・英語ラベルを捨てていた（``join()`` の戻り値を使っていなかった）
-# - 共通ラベルを「年度」で選んでいた（利用者が年度を指定）。ここでは書類が import する版の日付で選ぶ
-# - jpigp（IFRS）の共通ラベルを使っていなかった
-# - 共通ラベルを presentation にある科目に限っていた。ここではラベルファイルの全科目を使う
-# - 企業別と共通のラベルを縦に連結してから科目と結合していたため、両方にある科目が2行になった
+# Sources in order of priority:
+# 1. Company-specific labels of the document (``_lab.xml`` and ``_lab-en.xml`` in the ZIP)
+# 2. Common taxonomy labels (jpcrp, jppfs and jpigp of the versions imported by the document, read from ``TaxonomyCache``)
 
 LABEL_MODULES = ("jpcrp", "jppfs", "jpigp")
 LABEL_COLUMNS = {
@@ -169,7 +158,7 @@ STANDARD_ROLES = {"label", "verboseLabel"}
 
 
 def wide_labels(labels: pd.DataFrame) -> pd.DataFrame:
-    """縦持ちのラベル → 1科目1行（index＝key、列 label_jp, label_jp_long, label_en, label_en_long）。"""
+    """Long-format labels -> one row per account (index = key, columns label_jp, label_jp_long, label_en, label_en_long)."""
     columns = list(LABEL_COLUMNS.values())
     if labels.empty:
         return pd.DataFrame(columns=columns, index=pd.Index([], name="key"), dtype=object)
@@ -177,16 +166,18 @@ def wide_labels(labels: pd.DataFrame) -> pd.DataFrame:
         LABEL_COLUMNS.get((str(lang)[:2], role))
         for lang, role in zip(labels.lang, labels.label_role, strict=True)
     ]).dropna(subset=["column"])
-    # 同じ科目・同じ種類のラベルが複数あるとき（通常はない）は、文字列の昇順で最初のもの
+    # If an account has several labels of the same kind (usually not), take the first in string order
     labels = labels.sort_values(["key", "column", "text"]).drop_duplicates(["key", "column"])
     return labels.pivot(index="key", columns="column", values="text").reindex(columns=columns)
 
 
 def company_display_labels(company_labels: pd.DataFrame) -> pd.DataFrame:
-    """企業別ラベルのうち業種別の種類（``jppfs/cte/role/label`` など）で書かれたものを、標準の種類に読み替える。
+    """Treat company-specific labels written with an industry-specific role (``jppfs/cte/role/label``, etc.)
+    as the standard role.
 
-    企業は、標準の科目に付けた自社の表示名を業種別の種類で書くことがある。同じ科目・言語に標準の種類の
-    ラベルがなければ、それを標準のラベルとして使う。共通タクソノミの業種別ラベルは使わない。
+    Companies sometimes write their display name for a standard account with an industry-specific role. If the
+    same account and language has no label of the standard role, that label is used as the standard one.
+    Industry-specific labels of the common taxonomy are not used.
     """
     if company_labels.empty:
         return company_labels
@@ -205,10 +196,10 @@ def company_display_labels(company_labels: pd.DataFrame) -> pd.DataFrame:
 def resolve_labels(
     company_labels: pd.DataFrame, imports: dict[str, str], taxonomy: TaxonomyCache
 ) -> tuple[pd.DataFrame, list[str]]:
-    """書類の科目のラベル表と、見つからなかった共通ラベルの一覧を返す。
+    """Return the label table for the accounts of a document and the list of missing common labels.
 
-    ラベル表は index＝key、列 label_jp, label_jp_long, label_en, label_en_long, label_source
-    （``company``：企業別のラベルを1つ以上使った、``common``：共通ラベルだけ）。
+    The label table has index = key and columns label_jp, label_jp_long, label_en, label_en_long, label_source
+    (``company``: at least one company-specific label was used, ``common``: common labels only).
     """
     common_frames, missing = [], []
     for module, version in imports.items():
@@ -220,7 +211,7 @@ def resolve_labels(
             missing.append(f"{module}/{version}")
     common = wide_labels(pd.concat(common_frames, ignore_index=True) if common_frames else company_labels.iloc[0:0])
     company = wide_labels(company_display_labels(company_labels))
-    merged = company.combine_first(common)  # 列ごとに、企業別があればそれ、なければ共通
+    merged = company.combine_first(common)  # per column, the company-specific label if any, otherwise the common one
     source = pd.Series("common", index=merged.index)
     source[merged.index.isin(company.index)] = "company"
     return merged.assign(label_source=source), missing

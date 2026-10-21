@@ -1,9 +1,4 @@
-"""テキストブロック（事業等のリスク・事業の内容など）の前処理（旧 ``text_prep.py`` の前半）。
-
-旧版との違い:
-- ``RtnDroper``（再帰）を ``reduce_blank_lines``（正規表現）にした。結果は同じ
-- 引数名の誤記 ``drop_htmp`` を ``drop_html`` に直した
-"""
+"""Preprocessing of text blocks (business risks, description of business, etc.)."""
 
 from __future__ import annotations
 
@@ -18,28 +13,29 @@ BLANK_LINES = re.compile(r"\n(?: ?\n)+")
 
 
 def htmldrop(text: str) -> str:
-    """HTML のタグを取り除く。"""
+    """Remove HTML tags."""
     return HTML_TAG.sub("", text)
 
 
 def dropnumber(text: str) -> str:
-    """数字の並びを取り除く。"""
+    """Remove runs of digits."""
     return re.sub(r"\d+", "", text)
 
 
 def reduce_blank_lines(text: str) -> str:
-    """空行（``\\n\\n``・``\\n \\n`` の繰り返し）を1つの改行にする。"""
+    """Collapse blank lines (repeated ``\\n\\n`` or ``\\n \\n``) into a single newline."""
     return BLANK_LINES.sub("\n", text)
 
 
 def preproc_nlp(text: str, drop_html: bool = False, drop_number: bool = False, reduce_return: bool = False) -> str:
-    """テキストを正規化する。
+    """Normalize text.
 
-    1. HTML のタグを除く（``drop_html``）
-    2. Unicode 正規化（NFKC。全角英数字・記号を半角に）
-    3. 数字を除く（``drop_number``）
-    4. ASCII の記号（``.``・``%``・括弧などを含む）と ``◆■※`` を除き、句点「。」を改行にする
-    5. 空行を詰める（``reduce_return``）
+    1. Remove HTML tags (``drop_html``)
+    2. Unicode normalization (NFKC: full-width letters, digits and symbols to half-width)
+    3. Remove digits (``drop_number``)
+    4. Remove ASCII symbols (including ``.``, ``%`` and brackets) and ``◆■※``, and turn the Japanese
+       full stop "。" into a newline
+    5. Collapse blank lines (``reduce_return``)
     """
     if drop_html:
         text = htmldrop(text)

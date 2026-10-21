@@ -1,13 +1,6 @@
-"""linkbase（presentation・calculation・label）とスキーマの解析。
+"""Parsing of linkbases (presentation, calculation, label) and schemas.
 
-書類の linkbase と共通タクソノミの linkbase を、同じ関数で表に直す。
-
-旧版（``link_base_file_analyzer.py``）との違い:
-- ``get_presentation_account_list``・``get_presentation_common``・``get_calc_edge_list``・``get_label``・
-  ``get_label_common`` の5クラスに重複していた解析を、3つの関数にまとめた
-- 各ファイルの locator（``xlink:href``）から、そのファイル自身で科目（key）を決める。旧版はラベルの参照名を
-  presentation の参照名で引き直していたため、名前が違うと企業別のラベルが付かなかった
-- presentation の ``preferredLabel`` を残す。共通タクソノミの presentation の order を ``'1'`` に固定していた点も解消
+The same functions turn both document linkbases and common taxonomy linkbases into tables.
 """
 
 from __future__ import annotations
@@ -38,9 +31,9 @@ def _parse(data: bytes) -> etree._Element:
 
 
 def format_taxonomi(taxonomi_str: str) -> str:
-    """要素 ID（接頭辞_要素名）を key（接頭辞:要素名）に直す。
+    """Convert an element ID (prefix_ElementName) to a key (prefix:ElementName).
 
-    要素名に ``_`` は含まれないので、最後の ``_`` を ``:`` にする。
+    Element names contain no ``_``, so the last ``_`` becomes ``:``.
 
     >>> format_taxonomi("jpcrp030000-asr_E37207-000_IncreaseDecreaseInIncomeTaxesPayableOpeCF")
     'jpcrp030000-asr_E37207-000:IncreaseDecreaseInIncomeTaxesPayableOpeCF'
@@ -66,11 +59,11 @@ def role_suffix(role_uri: str) -> str:
 
 
 def label_role_name(role_uri: str) -> str:
-    """ラベルの種類の URI → 名前。
+    """Label role URI -> name.
 
-    XBRL 標準の種類は末尾の名前（``label``・``verboseLabel`` など）。EDINET の業種別の種類
-    （``http://disclosure.edinet-fsa.go.jp/jppfs/cns/role/label`` など）は、標準と区別するため
-    ``jppfs/cns/role/label`` のようにホスト以降を残す。
+    Standard XBRL roles become their last segment (``label``, ``verboseLabel``, etc.). EDINET industry-specific
+    roles (such as ``http://disclosure.edinet-fsa.go.jp/jppfs/cns/role/label``) keep the part after the host,
+    e.g. ``jppfs/cns/role/label``, to tell them apart from the standard ones.
     """
     if role_uri.startswith("http://www.xbrl.org/"):
         return role_uri.rsplit("/", 1)[-1]
@@ -78,7 +71,7 @@ def label_role_name(role_uri: str) -> str:
 
 
 def _locators(link: etree._Element) -> dict[str, str]:
-    """1つの extended link の locator：参照名（xlink:label）→ key。"""
+    """Locators of one extended link: reference name (xlink:label) -> key."""
     return {
         loc.get(_x("label")): key_from_href(loc.get(_x("href")))
         for loc in link.iter(f"{{{LINK}}}loc")
@@ -86,7 +79,7 @@ def _locators(link: etree._Element) -> dict[str, str]:
 
 
 def _arcs(data: bytes, link_name: str, arc_name: str) -> list[dict]:
-    """extended link ごとに arc を読み、role・親子の key・order と arc の属性を返す。"""
+    """Read the arcs of each extended link and return the role, parent/child keys, order and arc attributes."""
     rows = []
     for link in _parse(data).iter(f"{{{LINK}}}{link_name}"):
         role = role_suffix(link.get(_x("role")))
@@ -105,11 +98,11 @@ def _arcs(data: bytes, link_name: str, arc_name: str) -> list[dict]:
 
 
 def parse_presentation(data: bytes) -> pd.DataFrame:
-    """presentation linkbase → 列 role, parent_key, child_key, order, preferred_label。"""
+    """Presentation linkbase -> columns role, parent_key, child_key, order, preferred_label."""
     rows = [
         {
             **{k: r[k] for k in ("role", "parent_key", "child_key", "order")},
-            # ラベルの種類の名前だけ（業種別の jppfs/Consolidated/role/totalLabel も totalLabel）
+            # Only the label role name (the industry-specific jppfs/Consolidated/role/totalLabel also becomes totalLabel)
             "preferred_label": r["attrib"]["preferredLabel"].rsplit("/", 1)[-1]
             if r["attrib"].get("preferredLabel")
             else None,
@@ -120,9 +113,9 @@ def parse_presentation(data: bytes) -> pd.DataFrame:
 
 
 def parse_calculation(data: bytes) -> pd.DataFrame:
-    """calculation linkbase → 列 role, parent_key, child_key, order, weight。
+    """Calculation linkbase -> columns role, parent_key, child_key, order, weight.
 
-    同じロールに同じ親子の組が複数あるときは、最初の1つを残す（旧版と同じ）。
+    When the same parent-child pair appears more than once in a role, the first one is kept.
     """
     rows = [
         {
@@ -136,7 +129,7 @@ def parse_calculation(data: bytes) -> pd.DataFrame:
 
 
 def parse_labels(data: bytes) -> pd.DataFrame:
-    """label linkbase → 列 key, label_role, lang, text（1行＝1科目×1種類×1言語）。"""
+    """Label linkbase -> columns key, label_role, lang, text (one row = account x label role x language)."""
     rows = []
     for link in _parse(data).iter(f"{{{LINK}}}labelLink"):
         locators = _locators(link)
@@ -156,7 +149,7 @@ def parse_labels(data: bytes) -> pd.DataFrame:
 
 
 def schema_imports(data: bytes) -> dict[str, str]:
-    """書類のスキーマが import する EDINET タクソノミのモジュールと版の日付（例：{"jppfs": "2023-12-01"}）。"""
+    """EDINET taxonomy modules imported by a document schema and their version dates (e.g. {"jppfs": "2023-12-01"})."""
     out: dict[str, str] = {}
     for node in _parse(data).iter(f"{{{XSD}}}import"):
         parts = (node.get("schemaLocation") or "").split("/taxonomy/", 1)

@@ -1,17 +1,8 @@
-"""書類ごとの表（fs_tbl）と、複数書類をまとめた大福帳（One Big Table）を作る。
+"""Build the per-document table (fs_tbl) and the One Big Table of many documents.
 
-fs_tbl の1行＝1書類×1ロール×1科目×1 context の Fact。presentation の表示順・階層・親科目、
-calculation の計算関係、ラベル、借方／貸方の印、連結／個別・当期／前期の印を付ける。
-
-旧版（``fs_tbl.get_fs_tbl``・``linkbasefile``・``account_link_tracer``）との違い:
-- 表示順：``0.01 ** 階層`` で実数に符号化していたため、子が100を超えると順序が衝突した。
-  ここでは深さ優先の通し番号（``order``）、親からの並び（``order_path``）、深さ（``layer``）で持つ
-- ロールの選び方：旧版の ``role_keyward_list``（部分一致）を、財務諸表の種類（BS・PL など）で指定する形にした。
-  IFRS の連結財務諸表のロールと、包括利益計算書（CI）を加えた
-- 連結／個別のロールの判定：ロール名に ``Consolidated`` を含むか（旧版は ``_Consolidated`` で判定し、
-  注記の連結ロール ``rol_NotesConsolidated...`` を個別と誤っていた）
-- ラベルがない科目は欠損のまま（旧版は ``'-'`` を入れていた）
-- 計算関係の印（``calculated_flg``・``net_flg`` など）と借方／貸方の印を加えた
+One row of fs_tbl = one fact of document x role x account x context, with the presentation order, hierarchy and
+parent accounts, calculation relationships, labels, debit/credit flags, and consolidated/non-consolidated and
+current/prior year flags.
 """
 
 from __future__ import annotations
@@ -40,8 +31,7 @@ from edinet_xbrl_prep.linkbase import (
 from edinet_xbrl_prep.schemas import FsBigTableDf, FsTblDf, ProcessingLogDf
 from edinet_xbrl_prep.taxonomy import TaxonomyCache, resolve_labels
 
-# 財務諸表の種類 → ロール名（例：rol_ConsolidatedBalanceSheet）に「含まれる」文字列。
-# 旧版ノートブックの fs_dict に、IFRS の連結財務諸表のロールと包括利益計算書（CI）を加えた。
+# statement kind -> strings "contained" in the role name (e.g. rol_ConsolidatedBalanceSheet)
 STATEMENT_ROLE_PATTERNS: dict[str, list[str]] = {
     "BS": ["_BalanceSheet", "_ConsolidatedBalanceSheet", "_ConsolidatedStatementOfFinancialPositionIFRS"],
     "PL": ["_StatementOfIncome", "_ConsolidatedStatementOfIncome", "_ConsolidatedStatementOfProfitOrLossIFRS"],
@@ -59,7 +49,7 @@ STATEMENT_ROLE_PATTERNS: dict[str, list[str]] = {
 }
 DEFAULT_STATEMENTS = ("BS", "PL", "CF", "SS", "CI", "report", "notes")
 
-# 借方／貸方の判定に使う、計算関係のたどり先
+# calculation roots used to determine debit/credit
 ASSETS = ("jppfs_cor:Assets", "jpigp_cor:AssetsIFRS")
 LIABILITIES_AND_NET_ASSETS = ("jppfs_cor:LiabilitiesAndNetAssets", "jpigp_cor:LiabilitiesAndEquityIFRS")
 PROFIT_LOSS = ("jppfs_cor:ProfitLoss", "jpigp_cor:ProfitLossIFRS")
@@ -68,9 +58,9 @@ FS_COLUMNS = list(FsTblDf.to_schema().columns)
 
 
 def statement_of_role(role: str, statements: Sequence[str] = DEFAULT_STATEMENTS) -> str | None:
-    """ロール名 → 財務諸表の種類。``statements`` にない、または対象外なら None。
+    """Role name -> statement kind. None if the kind is not in ``statements`` or the role is not covered.
 
-    複数の種類に当たるときは ``STATEMENT_ROLE_PATTERNS`` の順で最初のもの。
+    If several kinds match, the first in ``STATEMENT_ROLE_PATTERNS`` order is used.
     """
     for statement, patterns in STATEMENT_ROLE_PATTERNS.items():
         if any(pattern in role for pattern in patterns):
@@ -78,17 +68,17 @@ def statement_of_role(role: str, statements: Sequence[str] = DEFAULT_STATEMENTS)
     return None
 
 
-# ---------------------------------------------------------------- presentation の木
+# ---------------------------------------------------------------- presentation tree
 
 
 @dataclass
 class RoleTree:
-    """1ロールの presentation の木。"""
+    """Presentation tree of one role."""
 
-    order: dict[str, int] = field(default_factory=dict)  # key → 通し番号（深さ優先の順）
-    order_path: dict[str, str] = field(default_factory=dict)  # key → "1_3_2" のような並び
-    layer: dict[str, int] = field(default_factory=dict)  # key → 深さ（根が 0）
-    parents: dict[str, list[str]] = field(default_factory=dict)  # key → 親科目（昇順）
+    order: dict[str, int] = field(default_factory=dict)  # key -> sequence number (depth-first order)
+    order_path: dict[str, str] = field(default_factory=dict)  # key -> position path such as "1_3_2"
+    layer: dict[str, int] = field(default_factory=dict)  # key -> depth (root is 0)
+    parents: dict[str, list[str]] = field(default_factory=dict)  # key -> parent accounts (sorted)
     preferred_label: dict[str, str | None] = field(default_factory=dict)
 
     @property
@@ -97,10 +87,10 @@ class RoleTree:
 
 
 def build_role_tree(arcs: pd.DataFrame) -> RoleTree:
-    """presentation の arc から、表示順・階層・親科目を求める。
+    """Compute the display order, hierarchy and parent accounts from presentation arcs.
 
-    根（親を持たない科目）は linkbase に現れた順、子は arc の order の順（同じ order は現れた順）に、
-    深さ優先でたどる。同じ科目が木の中に複数回現れるときは、最初に現れた位置を使う。
+    Traverse depth-first: roots (accounts without a parent) in order of appearance in the linkbase, children
+    in arc ``order`` (ties in order of appearance). An account appearing more than once uses its first position.
     """
     tree = RoleTree()
     children: dict[str, list[tuple[float, int, str]]] = defaultdict(list)
@@ -115,7 +105,7 @@ def build_role_tree(arcs: pd.DataFrame) -> RoleTree:
             tree.preferred_label[arc.child_key] = arc.preferred_label
 
     def visit(key: str, path: tuple[int, ...], stack: frozenset[str]) -> None:
-        if key in tree.order or key in stack:  # 2回目以降・循環は無視
+        if key in tree.order or key in stack:  # skip repeated visits and cycles
             return
         tree.order[key] = len(tree.order) + 1
         tree.order_path[key] = "_".join(map(str, path))
@@ -124,7 +114,7 @@ def build_role_tree(arcs: pd.DataFrame) -> RoleTree:
             visit(child, (*path, index), stack | {key})
 
     roots = sorted((k for k in first_seen if k not in parents), key=first_seen.get)
-    # 循環だけでできた部分（根がない）は、現れた順に最初の科目を根とみなす
+    # for parts made only of cycles (no root), treat the first account in order of appearance as a root
     roots += [k for k in sorted(first_seen, key=first_seen.get) if k not in roots]
     index = 0
     for root in roots:
@@ -139,9 +129,10 @@ def build_role_tree(arcs: pd.DataFrame) -> RoleTree:
 
 
 def calculation_effects(calc: pd.DataFrame, roots: Iterable[str]) -> dict[str, int]:
-    """計算関係をたどり、各科目が root（例：Assets）を増やす（+1）か減らす（-1）か（届かなければ 0）。
+    """Follow the calculation relationships: whether each account increases (+1) or decreases (-1) a root
+    (e.g. Assets), or 0 if it does not reach one.
 
-    親が複数ある科目は、root に届く親のうち、親の科目名の昇順で最初のものを使う。
+    For an account with several parents, the first parent (by name) that reaches a root is used.
     """
     roots = set(roots)
     weights: dict[str, dict[str, float]] = defaultdict(dict)  # child → {parent: weight}
@@ -169,10 +160,11 @@ def calculation_effects(calc: pd.DataFrame, roots: Iterable[str]) -> dict[str, i
 
 
 def debit_credit_keys(calc: pd.DataFrame) -> tuple[set[str], set[str]]:
-    """借方・貸方の科目。
+    """Debit and credit accounts.
 
-    debit：BS で資産を増やす科目、PL で当期純利益を減らす科目。credit：BS で負債純資産を増やす科目、
-    PL で当期純利益を増やす科目。書類の BS・PL の全ロールの和集合をとる。
+    debit: accounts that increase assets in the BS or decrease profit in the PL. credit: accounts that increase
+    liabilities and net assets in the BS or increase profit in the PL. The union over all BS and PL roles
+    of the document is taken.
     """
     debit, credit = set(ASSETS), set(LIABILITIES_AND_NET_ASSETS) | set(PROFIT_LOSS)
     for role, arcs in calc.groupby("role"):
@@ -188,7 +180,7 @@ def debit_credit_keys(calc: pd.DataFrame) -> tuple[set[str], set[str]]:
 
 
 def calculation_columns(calc: pd.DataFrame, keys: pd.Series) -> dict[str, pd.Series]:
-    """1ロールの計算関係から、科目ごとの列（calculated_flg・net_flg・net_src_flg・calc_parent_key・calc_weight）。"""
+    """Per-account columns from the calculation relationships of one role (calculated_flg, net_flg, net_src_flg, calc_parent_key, calc_weight)."""
     parents = set(calc.parent_key)
     net_parents = {key for key in parents if key.endswith("Net")}
     net_sources = set(calc.loc[calc.parent_key.isin(net_parents), "child_key"])
@@ -202,7 +194,7 @@ def calculation_columns(calc: pd.DataFrame, keys: pd.Series) -> dict[str, pd.Ser
     }
 
 
-# ---------------------------------------------------------------- 1書類
+# ---------------------------------------------------------------- one document
 
 
 def assemble_fs_tbl(
@@ -214,7 +206,7 @@ def assemble_fs_tbl(
     accounting_standards: str | None,
     statements: Sequence[str] = DEFAULT_STATEMENTS,
 ) -> pd.DataFrame:
-    """Fact・presentation・calculation・ラベルから fs_tbl を作る。"""
+    """Build fs_tbl from facts, presentation, calculation and labels."""
     debit, credit = debit_credit_keys(calculation)
     frames = []
     for role, arcs in presentation.groupby("role", sort=True):
@@ -225,7 +217,7 @@ def assemble_fs_tbl(
         data = facts[facts.key.isin(tree.keys)]
         consolidated_role = "Consolidated" in role
         non_consolidated = data.context_ref.str.contains("NonConsolidated").astype(int)
-        # 連結のロールには連結の値、個別のロールには個別の値だけを残す（報告書本体のロールはすべて残す）
+        # keep only consolidated values in consolidated roles and non-consolidated values in other roles (report roles keep all)
         if statement != "report":
             keep = non_consolidated == (0 if consolidated_role else 1)
             data, non_consolidated = data[keep], non_consolidated[keep]
@@ -260,7 +252,7 @@ def assemble_fs_tbl(
 
 @dataclass
 class ParsedDocument:
-    """``parse_document`` の結果。"""
+    """Result of ``parse_document``."""
 
     docid: str
     fs_tbl: pd.DataFrame
@@ -275,7 +267,7 @@ def parse_document(
     statements: Sequence[str] = DEFAULT_STATEMENTS,
     work_dir: str | Path | None = None,
 ) -> ParsedDocument:
-    """書類1件の ZIP から fs_tbl を作る。ZIP の展開は一時ディレクトリで行い、終わったら消す。"""
+    """Build fs_tbl from the ZIP of one document. Files are extracted to a temporary directory that is removed afterwards."""
     zip_path = Path(zip_path)
     docid = docid or zip_path.stem
     archive = XbrlArchive.open(zip_path)
@@ -297,7 +289,7 @@ def parse_document(
     with tempfile.TemporaryDirectory(prefix=f"{docid}_", dir=work_dir) as tmp:
         instance = archive.extract(Path(tmp))
         loaded = load_facts(instance, taxonomy, Path(tmp) / "arelle.log")
-    # Arelle が読んだ後なら、書類が参照する版の共通ラベルがキャッシュにある
+    # after Arelle has loaded the document, the common labels of the referenced versions are in the cache
     imports = schema_imports(archive.get("schema"))
     labels, missing_labels = resolve_labels(company_labels, imports, taxonomy)
     fs_tbl = assemble_fs_tbl(
@@ -321,20 +313,20 @@ def get_fs_tbl(
     docid: str | None = None,
     statements: Sequence[str] = DEFAULT_STATEMENTS,
 ) -> pd.DataFrame:
-    """書類1件の ZIP から fs_tbl を作る（``parse_document`` の表だけを返す）。"""
+    """Build fs_tbl from the ZIP of one document (returns only the table of ``parse_document``)."""
     return parse_document(zip_path, taxonomy, docid=docid, statements=statements).fs_tbl
 
 
-# ---------------------------------------------------------------- 複数書類（大福帳）
+# ---------------------------------------------------------------- many documents (One Big Table)
 
 
 @dataclass
 class FsTableResult:
-    """``build_fs_table`` の結果。"""
+    """Result of ``build_fs_table``."""
 
-    table: pd.DataFrame  # 大福帳（FsTblDf に書類の情報の列を加えたもの）
-    log: pd.DataFrame  # 書類ごとの処理結果（ProcessingLogDf）
-    paths: dict[str, Path] = field(default_factory=dict)  # 保存したファイル
+    table: pd.DataFrame  # One Big Table (FsTblDf plus document information columns)
+    log: pd.DataFrame  # per-document processing results (ProcessingLogDf)
+    paths: dict[str, Path] = field(default_factory=dict)  # saved files
 
 
 def build_fs_table(
@@ -347,13 +339,13 @@ def build_fs_table(
     document_columns: Sequence[str] = ("filerName", "sector_label_33"),
     out_path: str | Path | None = None,
 ) -> FsTableResult:
-    """複数の書類の fs_tbl を縦につなげた大福帳を作る。
+    """Build the One Big Table by stacking the fs_tbl of many documents.
 
-    - 書類の ZIP は ``{zip_dir}/{docid}.zip``
-    - 1件の失敗で止めず、理由を ``log`` に記録して次へ進む
-    - ``documents``（書類一覧。列 ``docID`` を持つ）を渡すと、``document_columns`` の列を各行に付ける
-    - ``out_path``（``.parquet`` または ``.csv``）を渡すと、大福帳と処理結果（``{名前}_log``）を保存し、
-      それぞれにリネージ（``{名前}_lin.json``）を付ける
+    - Document ZIPs are at ``{zip_dir}/{docid}.zip``
+    - A failing document does not stop the run; the reason is recorded in ``log``
+    - With ``documents`` (document list with a ``docID`` column), the ``document_columns`` are added to each row
+    - With ``out_path`` (``.parquet`` or ``.csv``), the table and the processing results (``{name}_log``) are saved,
+      each with its lineage (``{name}_lin.json``)
     """
     zip_dir = Path(zip_dir)
     docids = list(dict.fromkeys(docids))
@@ -371,7 +363,7 @@ def build_fs_table(
                 taxonomy_versions=",".join(f"{k}/{v}" for k, v in sorted(parsed.info["taxonomy_versions"].items())),
                 message="; ".join(f"共通ラベルなし:{m}" for m in parsed.info["missing_common_labels"]) or None,
             )
-        except Exception as exc:  # noqa: BLE001  書類単位の失敗は記録して続ける
+        except Exception as exc:  # noqa: BLE001  record per-document failures and continue
             row.update(status="failure", message=f"{type(exc).__name__}: {exc}")
         log_rows.append(row)
     table = pd.concat(tables, ignore_index=True) if tables else FsTblDf.validate(pd.DataFrame(columns=FS_COLUMNS))
@@ -433,4 +425,3 @@ def _save_fs_table(
         schema=ProcessingLogDf,
     )
     return {"table": out_path, "log": log_path}
-

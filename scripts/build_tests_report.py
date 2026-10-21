@@ -1,4 +1,4 @@
-"""テストを実行し、テストの内容と対象の関数の対応を HTML（docs/tests_report.html）にまとめる。
+"""テストを実行し、テストの内容と対象の関数の対応を HTML（../docs/tests_report.html）にまとめる。
 
     uv run python scripts/build_tests_report.py
     # 実際の書類を使うテストも含める
@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import html
 import json
@@ -21,7 +22,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from build_dependency_graph import PACKAGE, collect  # noqa: E402
+from build_dependency_graph import DOCS_DIR, PACKAGE, collect  # noqa: E402
 
 
 class Collector:
@@ -131,11 +132,14 @@ document.getElementById('q').addEventListener('input', e => {{
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--out-dir", type=Path, default=DOCS_DIR, help="出力先（既定：リポジトリの外の ../docs）")
+    args = parser.parse_args()
     collector = Collector()
     exit_code = pytest.main(["-q", "-p", "no:cacheprovider", str(ROOT / "tests")], plugins=[collector])
     entries = sorted(collector.items.values(), key=lambda e: (e["file"], e["nodeid"]))
-    out = ROOT / "docs" / "tests_report.html"
-    out.parent.mkdir(exist_ok=True)
+    out = args.out_dir / "tests_report.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(entries, public_functions(), int(exit_code)), encoding="utf-8")
     print(f"{out}（{len(entries)} 件）")
     return int(exit_code)

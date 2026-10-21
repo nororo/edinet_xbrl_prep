@@ -1,14 +1,4 @@
-"""EDINET API（version 2）による書類一覧・書類の取得と、書類一覧の表。
-
-旧版（``edinet_api.py``）との違い:
-- TLS 証明書を検証する（旧版は ``verify=False``）。リトライを ``https://`` に設定する（旧版は ``http://``
-  にだけ設定していたため、リトライが効いていなかった）
-- API キーは引数か環境変数 ``EDINET_API_KEY`` で渡す。例外やログのメッセージから API キーを取り除く
-- 1日（1書類）単位で失敗を記録して先に進む。書類一覧の取得で通信エラーが起きても全体が止まらない
-- pydantic のモデル（``EdinetResponse``・``RequestResponse`` など）と ``edinet_response_metadata`` クラスを、
-  結果の dataclass と表を返す関数にまとめた。表の構造は ``schemas.DocumentListDf``
-- 書類一覧の抽出（``get_yuho_df``）と業種の付与を分けた（``select_reports``・``add_tse_sector``）
-"""
+"""Fetching document lists and documents with the EDINET API (version 2), and the document list table."""
 
 from __future__ import annotations
 
@@ -33,19 +23,19 @@ from edinet_xbrl_prep.schemas import DocumentListDf, DownloadLogDf
 API_BASE = "https://api.edinet-fsa.go.jp/api/v2"
 ENV_API_KEY = "EDINET_API_KEY"
 RETRY_STATUS = (429, 500, 502, 503, 504)
-# 東証の上場銘柄一覧（業種区分を含む）。旧版ノートブックと同じ URL
+# TSE list of listed companies (with industry classifications)
 TSE_LISTED_COMPANIES_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
 
-# 書類の種類 → （府令コード, 様式コード, 書類種別コード）
+# report kind -> (ordinance code, form code, document type code)
 REPORT_KINDS = {
-    "annual": ("010", "030000", "120"),  # 有価証券報告書
-    "amended_annual": ("010", "030001", "130"),  # 訂正有価証券報告書
+    "annual": ("010", "030000", "120"),  # annual securities report
+    "amended_annual": ("010", "030001", "130"),  # amended annual securities report
 }
 DOCUMENT_COLUMNS = [c for c in DocumentListDf.to_schema().columns if not c.startswith("sector_")]
 
 
 class ApiKeyMissingError(RuntimeError):
-    """API キーが引数にも環境変数にもない。"""
+    """No API key in the argument or the environment variable."""
 
 
 def resolve_api_key(api_key: str | None = None) -> str:
@@ -60,7 +50,7 @@ def redact(text: str, secret: str | None) -> str:
 
 
 def build_session(retries: int = 5, backoff: float = 1.0) -> requests.Session:
-    """HTTPS にリトライ（429・500系・接続エラー・タイムアウト）を設定したセッション。"""
+    """Session with retries on HTTPS (429, 5xx, connection errors, timeouts)."""
     retry = Retry(
         total=retries,
         backoff_factor=backoff,
@@ -77,7 +67,7 @@ def build_session(retries: int = 5, backoff: float = 1.0) -> requests.Session:
 
 
 def date_range(start: str | dt.date, end: str | dt.date) -> Iterator[dt.date]:
-    """開始日から終了日まで（終了日を含む）。"""
+    """Dates from start to end (end inclusive)."""
     start, end = dt.date.fromisoformat(str(start)), dt.date.fromisoformat(str(end))
     if end < start:
         raise ValueError(f"終了日 {end} が開始日 {start} より前")
@@ -85,12 +75,12 @@ def date_range(start: str | dt.date, end: str | dt.date) -> Iterator[dt.date]:
         yield start + dt.timedelta(days=offset)
 
 
-# ---------------------------------------------------------------- 書類一覧 API
+# ---------------------------------------------------------------- document list API
 
 
 @dataclass
 class DayResult:
-    """書類一覧 API の1日分の結果。"""
+    """Result of the document list API for one day."""
 
     date: str
     status: Literal["success", "failure"]
@@ -102,7 +92,7 @@ class DayResult:
 def fetch_document_list(
     date: str | dt.date, *, api_key: str | None = None, session: requests.Session | None = None
 ) -> DayResult:
-    """1日分の書類一覧（type=2：書類一覧とメタデータ）を取得する。失敗しても例外にせず結果に記録する。"""
+    """Fetch the document list of one day (type=2: list and metadata). Failures are recorded in the result, not raised."""
     key = resolve_api_key(api_key)
     session = session or build_session()
     day = str(date)
@@ -131,7 +121,7 @@ def fetch_document_lists(
     api_key: str | None = None,
     sleep_sec: float = 0.5,
 ) -> list[DayResult]:
-    """開始日から終了日まで（両端を含む）の書類一覧を、1日ずつ取得する。"""
+    """Fetch the document lists day by day from the start date to the end date (both inclusive)."""
     key = resolve_api_key(api_key)
     session = build_session()
     results = []
@@ -142,7 +132,7 @@ def fetch_document_lists(
 
 
 def save_day_results(results: Iterable[DayResult], path: str | Path) -> Path:
-    """取得結果をそのまま JSON Lines（1行＝1日）で保存する（API の応答の控え）。"""
+    """Save the results as they are in JSON Lines (one line = one day), as a record of the API responses."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
@@ -157,7 +147,7 @@ def load_day_results(path: str | Path) -> list[DayResult]:
 
 
 def documents_frame(results: Iterable[DayResult]) -> pd.DataFrame:
-    """成功した日の書類一覧を、1行＝1書類の表（``DocumentListDf``）にする。"""
+    """Turn the lists of successful days into a table with one row per document (``DocumentListDf``)."""
     rows = [
         {**{c: item.get(c) for c in DOCUMENT_COLUMNS}, "date": r.date, "access_date": r.access_date}
         for r in results
@@ -165,20 +155,20 @@ def documents_frame(results: Iterable[DayResult]) -> pd.DataFrame:
         for item in r.results
     ]
     frame = pd.DataFrame(rows, columns=DOCUMENT_COLUMNS)
-    frame = frame.replace({"": None})  # API の空文字は欠損にそろえる
+    frame = frame.replace({"": None})  # treat empty strings from the API as missing
     return DocumentListDf.validate(frame.sort_values(["date", "seqNumber"], ignore_index=True))
 
 
 def failed_days(results: Iterable[DayResult]) -> list[str]:
-    """取得に失敗した日（取り直しに使う）。"""
+    """Days whose retrieval failed (for retrying)."""
     return [r.date for r in results if r.status != "success"]
 
 
 def select_reports(documents: pd.DataFrame, kinds: Iterable[str] = ("annual",)) -> pd.DataFrame:
-    """書類一覧から、有価証券報告書（``annual``）・訂正有価証券報告書（``amended_annual``）を選ぶ。
+    """Select annual securities reports (``annual``) and amended ones (``amended_annual``) from the document list.
 
-    取り下げに関わる行（``withdrawalStatus`` が 0 以外）と、財務局職員が修正した書類の修正前の行
-    （``docInfoEditStatus`` が 2）は除く。
+    Rows related to withdrawal (``withdrawalStatus`` other than 0) and the pre-correction rows of documents
+    corrected by Local Finance Bureau staff (``docInfoEditStatus`` = 2) are excluded.
     """
     selected = pd.Series(False, index=documents.index)
     for kind in kinds:
@@ -193,7 +183,7 @@ def select_reports(documents: pd.DataFrame, kinds: Iterable[str] = ("annual",)) 
 
 
 def read_tse_sector(source: str | Path = TSE_LISTED_COMPANIES_URL) -> pd.DataFrame:
-    """東証の上場銘柄一覧（URL または手元の .xls）から、証券コード（5桁）と業種区分を読む。"""
+    """Read securities codes (5 digits) and industry classifications from the TSE list (URL or local .xls)."""
     table = pd.read_excel(source, header=0, dtype=str)
     table = table.rename(
         columns={
@@ -210,9 +200,10 @@ def read_tse_sector(source: str | Path = TSE_LISTED_COMPANIES_URL) -> pd.DataFra
 
 
 def add_tse_sector(documents: pd.DataFrame, sector: pd.DataFrame) -> pd.DataFrame:
-    """書類一覧に業種区分の列を付ける（``sector`` は ``read_tse_sector`` の結果）。
+    """Add industry classification columns to the document list (``sector`` is the result of ``read_tse_sector``).
 
-    東証の一覧は取得した時点の上場銘柄・業種なので、上場廃止した会社などには付かない。
+    The TSE list reflects listed companies and industries at the time of retrieval, so delisted companies
+    and the like get no classification.
     """
     merged = documents.drop(columns=[c for c in sector.columns if c != "secCode" and c in documents]).merge(
         sector, on="secCode", how="left"
@@ -223,7 +214,7 @@ def add_tse_sector(documents: pd.DataFrame, sector: pd.DataFrame) -> pd.DataFram
 def save_document_list(
     documents: pd.DataFrame, path: str | Path, *, source_data_list: Iterable[str], purpose: str | None = None
 ) -> Path:
-    """書類一覧の表を保存し、リネージを付ける。"""
+    """Save the document list table with its lineage."""
     dates = documents.date
     return save_table(
         documents,
@@ -247,7 +238,7 @@ def save_document_list(
     )
 
 
-# ---------------------------------------------------------------- 書類取得 API
+# ---------------------------------------------------------------- document API
 
 
 def download_document(
@@ -258,7 +249,7 @@ def download_document(
     session: requests.Session | None = None,
     doc_type: Literal[1, 2, 5] = 1,
 ) -> dict[str, Any]:
-    """書類を1件ダウンロードする（type 1：XBRL を含む ZIP、2：PDF、5：CSV）。結果を辞書で返す。"""
+    """Download one document (type 1: ZIP with XBRL, 2: PDF, 5: CSV) and return the result as a dict."""
     key = resolve_api_key(api_key)
     session = session or build_session()
     out_path = Path(out_path)
@@ -294,7 +285,7 @@ def download_documents(
     sleep_sec: float = 0.5,
     overwrite: bool = False,
 ) -> pd.DataFrame:
-    """書類の ZIP を ``{out_dir}/{docid}.zip`` にダウンロードする。すでにあれば飛ばす（``skipped``）。"""
+    """Download document ZIPs to ``{out_dir}/{docid}.zip``. Existing files are skipped (``skipped``)."""
     key = resolve_api_key(api_key)
     session = build_session()
     out_dir = Path(out_dir)

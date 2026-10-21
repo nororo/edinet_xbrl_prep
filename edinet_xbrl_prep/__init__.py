@@ -1,10 +1,10 @@
-"""EDINET の有価証券報告書 XBRL から、財務数値・テキストの大福帳（One Big Table）を作る。
+"""Build a One Big Table of financial values and text from EDINET annual securities report XBRL.
 
-主な流れ（README 参照）:
-1. ``fetch_document_lists`` → ``documents_frame`` → ``select_reports``：書類一覧を取得し、有価証券報告書を選ぶ
-2. ``download_documents``：書類の ZIP をダウンロードする
-3. ``TaxonomyCache``：タクソノミのキャッシュ（Arelle と共通ラベルが読む）
-4. ``build_fs_table``：大福帳を作り、リネージ付きで保存する
+Main flow (see README):
+1. ``fetch_document_lists`` -> ``documents_frame`` -> ``select_reports``: fetch the document list and select annual reports
+2. ``download_documents``: download the document ZIP files
+3. ``TaxonomyCache``: taxonomy cache (read by Arelle and for the common labels)
+4. ``build_fs_table``: build the One Big Table and save it with lineage
 """
 
 from edinet_xbrl_prep.edinet_api import (

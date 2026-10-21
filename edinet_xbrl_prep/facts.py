@@ -1,13 +1,4 @@
-"""Arelle で XBRL インスタンスの Fact を取り出す。
-
-旧版（``xbrl_parser_rapper.get_xbrl_rapper``・``get_xbrl_df``・``get_xbrl_dei_df``）との違い:
-- 期末日・時点：Arelle は日付だけの ``endDate``・``instant`` を「翌日0時」として持つため、旧版の
-  ``period_end``・``instant_date`` は1日後ろにずれていた。ここでは XBRL に書かれた日付（propertyView）を使う。
-  旧版の ``end_date_pv``・``instant_date_pv`` は、直した ``period_end``・``instant_date`` と同じになるので廃止
-- 会計基準（``jpdei_cor:AccountingStandardsDEI``）は同じ読み込みで取り出す（旧版は書類を2回読み込んでいた）
-- 例外を握りつぶさない（旧版は例外ハンドラ内で再び例外が出ることがあった）。失敗は呼び出し側で記録する
-- 同じ要素・同じ context の Fact が複数あるとき（提出データの重複）は1行にまとめ、元の数を残す
-"""
+"""Extract the facts of an XBRL instance with Arelle."""
 
 from __future__ import annotations
 
@@ -41,7 +32,7 @@ FACT_COLUMNS = [
 
 
 class XbrlLoadError(Exception):
-    """Arelle が書類を読めなかった（Fact が0件）。"""
+    """Arelle could not read the document (no facts)."""
 
 
 @dataclass
@@ -63,9 +54,10 @@ def _date_text(value: object) -> str | None:
 
 
 def context_dates(context) -> tuple[str | None, str | None, str | None]:
-    """（期首日, 期末日, 時点）。XBRL に書かれた日付（propertyView）を使う。
+    """Return (period start, period end, instant) using the dates written in the XBRL (propertyView).
 
-    時点（instant）の Fact は、期末日にも時点と同じ日を入れる（旧版と同じ扱い）。
+    Arelle holds a date-only ``endDate``/``instant`` as midnight of the next day, so the written dates are used.
+    For instant facts, the period end is set to the instant date as well.
     """
     view = dict(item for item in (context.propertyView or ()) if item and len(item) == 2)
     if context.isInstantPeriod:
@@ -83,7 +75,7 @@ def context_dates(context) -> tuple[str | None, str | None, str | None]:
 
 
 def context_dimensions(context) -> str | None:
-    """シナリオの次元とメンバー（例：連結・個別、セグメント）を JSON 文字列で。"""
+    """Scenario dimensions and members (e.g. consolidated/non-consolidated, segments) as a JSON string."""
     dims = context.qnameDims
     if not dims:
         return None
@@ -95,7 +87,7 @@ def context_dimensions(context) -> str | None:
 
 
 def load_facts(instance: Path, taxonomy: TaxonomyCache, log_file: Path) -> FactsResult:
-    """インスタンスを読み、Fact の表と会計基準を返す。"""
+    """Load an instance and return the fact table and the accounting standards."""
     controller = taxonomy.controller(log_file)
     try:
         model = controller.modelManager.load(str(instance))
@@ -138,10 +130,11 @@ def load_facts(instance: Path, taxonomy: TaxonomyCache, log_file: Path) -> Facts
 
 
 def merge_duplicate_facts(facts: pd.DataFrame) -> pd.DataFrame:
-    """同じ（要素, context）で値の違う Fact を1行にまとめ、元の Fact の数を ``n_source_facts`` に残す。
+    """Merge facts with the same (element, context) but different values into one row and keep the
+    number of source facts in ``n_source_facts``.
 
-    - テキストブロック：本文を現れた順に改行でつなぐ（どちらの本文も捨てない）
-    - それ以外（値の食い違う数値など）：最初の Fact を残す
+    - Text blocks: join the texts with newlines in order of appearance (no text is dropped)
+    - Others (e.g. conflicting numbers): keep the first fact
     """
     facts = facts.assign(n_source_facts=1)
     keys = ["key", "context_ref"]

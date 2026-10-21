@@ -1,11 +1,6 @@
-"""LLM による情報抽出の補助（旧 ``text_prep.py`` の後半。ノートブック 4.2 の事業内容の抽出で使う）。
+"""Helpers for information extraction with an LLM (e.g. extracting business descriptions).
 
-``groq`` は追加の依存（``pip install "edinet-xbrl-prep[llm]"``）。
-
-旧版との違い:
-- 応答が空のときに ``ValueError`` を作るだけで送出していなかった点を直した
-- ``Prompt.instruction`` の説明（API Key と書かれていた）を直した
-- 既定の temperature を 0 にした（旧版 0.6。同じ入力から同じ出力を得やすくするため）
+``groq`` is an optional dependency (``pip install "edinet-xbrl-prep[llm]"``).
 """
 
 from __future__ import annotations
@@ -20,7 +15,7 @@ JSON_OBJECT = re.compile(r"{.*?}")
 
 @dataclass
 class Prompt:
-    """指示・注意事項・回答形式・例からなるプロンプト。"""
+    """A prompt made of an instruction, constraints, an output format and an example."""
 
     instruction: str
     example: str
@@ -28,7 +23,7 @@ class Prompt:
     output_format: str
 
     def export(self, provided_text: str) -> tuple[str, str]:
-        """（システムプロンプト, ユーザープロンプト）。"""
+        """Return (system prompt, user prompt)."""
         constraint = "#### 注意事項\n * " + "\n * ".join(self.constraints_list)
         system_prompt = f"{self.instruction}\n\n{constraint}\n\n{self.output_format}\n\n#### 例\n{self.example}"
         user_prompt = f"#### 文章\n{provided_text}\n\n#### 回答\n"
@@ -43,7 +38,7 @@ class Prompt:
 
 
 def extract_json_objects(text: str) -> list[dict]:
-    """応答から ``{...}`` の JSON を順に取り出す（入れ子の JSON は対象外）。"""
+    """Extract the ``{...}`` JSON objects from a response in order (nested JSON is not supported)."""
     if not text:
         raise ValueError("text is empty")
     return [json.loads(item) for item in JSON_OBJECT.findall(text.replace("\n", ""))]
@@ -70,7 +65,7 @@ class ResponseGenAI:
 
 @dataclass
 class GroqAPI:
-    """Groq のチャット API。"""
+    """Groq chat completion API."""
 
     api_key: str
     max_retries: int = 2
@@ -94,7 +89,7 @@ class GroqAPI:
             response = self.client.chat.completions.create(
                 model=model_name, messages=messages, max_tokens=max_tokens, temperature=temperature
             )
-        except Exception as exc:  # noqa: BLE001  API の失敗は結果に記録する
+        except Exception as exc:  # noqa: BLE001  record API failures in the result
             return ResponseGenAI(error_message=str(exc).replace(self.api_key, "***"))
         return ResponseGenAI(
             output=response.choices[0].message.content or "",

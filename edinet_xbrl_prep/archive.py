@@ -1,10 +1,4 @@
-"""書類の ZIP から、有価証券報告書本体（PublicDoc の asr）のファイルを取り出す。
-
-旧版は ``"lab.xml" in name`` のように名前の一部で探し、最初に見つかったファイルを使っていたため、
-監査報告書（AuditDoc）などのファイルを拾うことがあった。ここでは PublicDoc にある本体
-（ファイル名に ``asr`` を含む）のファイルだけを、種類ごとに1つ選び、中身をメモリに読む。
-訂正報告書も同じ規則（訂正後の全文が asr として入っている）。
-"""
+"""Extract the files of the annual securities report body (``asr`` in PublicDoc) from a document ZIP."""
 
 from __future__ import annotations
 
@@ -13,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
-# 種類 → ファイル名の末尾
+# file kind -> file name suffix
 KINDS = {
     "instance": re.compile(r"\.xbrl$"),
     "schema": re.compile(r"\.xsd$"),
@@ -27,16 +21,16 @@ PUBLIC_ASR = re.compile(r"XBRL/PublicDoc/[^/]*asr[^/]*$")
 
 
 class XbrlArchiveError(Exception):
-    """ZIP が開けない、または本体のインスタンス・スキーマがない。"""
+    """The ZIP cannot be opened, or it has no instance or schema of the report body."""
 
 
 @dataclass
 class XbrlArchive:
-    """ZIP 内の有価証券報告書本体のファイル。"""
+    """Files of the annual securities report body in a ZIP."""
 
     path: Path
-    names: dict[str, str] = field(default_factory=dict)  # 種類 → ZIP 内のパス
-    contents: dict[str, bytes] = field(default_factory=dict)  # 種類 → 中身
+    names: dict[str, str] = field(default_factory=dict)  # kind -> path in the ZIP
+    contents: dict[str, bytes] = field(default_factory=dict)  # kind -> content
 
     @classmethod
     def open(cls, path: str | Path) -> XbrlArchive:
@@ -59,7 +53,7 @@ class XbrlArchive:
         return self.contents.get(kind)
 
     def extract(self, target_dir: Path) -> Path:
-        """Arelle に読ませるため、本体のファイルを展開し、インスタンスのパスを返す。"""
+        """Write the body files for Arelle to read and return the path of the instance."""
         out = Path(target_dir) / "XBRL" / "PublicDoc"
         out.mkdir(parents=True, exist_ok=True)
         for kind, data in self.contents.items():

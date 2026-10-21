@@ -8,9 +8,6 @@ EDINET の有価証券報告書（XBRL）を取得し、財務数値・テキス
 
 ![OneBigTable](resources/OneBigTableImage.png)
 
-> v0.2 で関数の構成を整理しました。v0.1 の関数との対応は [旧版（v0.1）からの移行](#旧版v01からの移行) を参照してください。
-> v0.1 の分析例のノートブック（`xbrl_analysis.ipynb`）は v0.1 の関数で書かれています。v0.2 の関数で書いた同じ流れは [`examples/xbrl_analysis.py`](examples/xbrl_analysis.py) です。
-
 ## 導入
 
 Python 3.12 以上（開発は 3.12。Google Colab の 3.13 でも動作を確認しています）。
@@ -21,14 +18,6 @@ pip install "git+https://github.com/nororo/edinet_xbrl_prep.git"
 pip install "edinet-xbrl-prep[analysis,llm] @ git+https://github.com/nororo/edinet_xbrl_prep.git"
 ```
 
-開発する場合は [uv](https://docs.astral.sh/uv/) を使います（`uv.lock` で依存の版を固定しています）。
-
-```bash
-git clone https://github.com/nororo/edinet_xbrl_prep.git
-cd edinet_xbrl_prep
-uv sync
-uv run pytest
-```
 
 ## 使い方
 
@@ -66,7 +55,7 @@ result.log              # 書類ごとの処理結果（success・empty・failur
 
 書類1件だけを処理する場合は `get_fs_tbl(zip_path, taxonomy)` を使います。
 
-### 財務諸表の種類（`statements`）
+### 財務諸表の種類
 
 ロール名（例：`rol_ConsolidatedBalanceSheet`）に、次の文字列のどれかを含むロールを選びます（`STATEMENT_ROLE_PATTERNS`）。
 
@@ -74,8 +63,8 @@ result.log              # 書類ごとの処理結果（success・empty・failur
 |------|------|---------------------|
 | `BS` | 貸借対照表（IFRS の連結財政状態計算書を含む） | `_BalanceSheet`、`_ConsolidatedBalanceSheet`、`_ConsolidatedStatementOfFinancialPositionIFRS` |
 | `PL` | 損益計算書（IFRS を含む） | `_StatementOfIncome`、`_ConsolidatedStatementOfIncome`、`_ConsolidatedStatementOfProfitOrLossIFRS` |
-| `CF` | キャッシュ・フロー計算書 | `_StatementOfCashFlows`、`_ConsolidatedStatementOfCashFlows`、`…IFRS` |
-| `SS` | 株主資本等変動計算書 | `_StatementOfChangesInEquity`、`_StatementOfChangesInNetAssets` など |
+| `CF` | キャッシュ・フロー計算書 | `_StatementOfCashFlows`、`_ConsolidatedStatementOfCashFlows` |
+| `SS` | 株主資本等変動計算書 | `_StatementOfChangesInEquity`、`_StatementOfChangesInNetAssets` |
 | `CI` | 包括利益計算書 | `_ConsolidatedStatementOfComprehensiveIncome` |
 | `report` | 有価証券報告書の本文（テキストブロック） | `_CabinetOfficeOrdinanceOnDisclosure` |
 | `notes` | 注記 | `_Notes` |
@@ -142,48 +131,20 @@ edinet_xbrl_prep/
 ├── llm.py          LLM による抽出の補助（Prompt・GroqAPI。追加の依存 llm）
 ├── schemas.py      pandera のスキーマ
 └── lineage.py      表の保存とリネージ
-docs/               依存関係グラフ・テスト一覧（HTML）、グラフの指標、Colab での確認結果
 examples/           分析例（v0.2 の API）
 scripts/            依存関係グラフ・テスト一覧の HTML の生成
 tests/              テスト（tests/colab/ は Colab での確認用スクリプト）
 ```
 
 ## テストと HTML
+uvを利用しtestの実行ができます。
 
 ```bash
+git clone https://github.com/nororo/edinet_xbrl_prep.git
+cd edinet_xbrl_prep
+uv sync
 uv run pytest                                          # 実際の書類を使うテストは飛ばす
 EDINET_FIXTURE_DIR=/path/to/zips uv run pytest         # 書類の ZIP（{docid}.zip）を使うテストも実行する
-uv run python scripts/build_tests_report.py            # テストを実行して docs/tests_report.html を作る
-uv run python scripts/build_dependency_graph.py        # docs/dependency_graph.html と docs/graph_metrics.json
+uv run python scripts/build_tests_report.py            # テストを実行して ../docs/tests_report.html を作る
+uv run python scripts/build_dependency_graph.py        # ../docs/dependency_graph.html と ../docs/graph_metrics.json
 ```
-
-- [`docs/dependency_graph.html`](docs/dependency_graph.html)：モジュール・関数の依存関係（ノードを選ぶと呼び出し元・先を強調）。
-  リファクタリング前は [`docs/dependency_graph_before.html`](docs/dependency_graph_before.html)
-- [`docs/tests_report.html`](docs/tests_report.html)：テストの内容と、対象の関数の対応
-- ブラウザで開くと vis-network を CDN（cdnjs）から読みます
-
-### Colab での確認
-
-`tests/colab/colab_obt_check.py` は、Google Colab（CPU）にホイールを入れ、書類の ZIP から大福帳を作って保存し、
-読み直してリネージを確かめるスクリプトです（手順はファイルの先頭）。結果の例は [`docs/colab_obt_check.json`](docs/colab_obt_check.json)。
-
-## 旧版（v0.1）からの移行
-
-| v0.1 | v0.2 |
-|------|------|
-| `edinet_api.request_term(api_key, start_date_str, end_date_str)` | `fetch_document_lists(start, end, api_key=...)` |
-| `edinet_response_metadata(...).set_data / save / read_jsonl` | `save_day_results`・`load_day_results` |
-| `edinet_response_metadata(...).get_yuho_df()` | `select_reports(documents_frame(results))` と `add_tse_sector(..., read_tse_sector(url))` |
-| `edinet_api.request_doc(api_key, docid, out_filename_str)` | `download_document(docid, out_path, api_key=...)`・`download_documents(docids, out_dir, ...)` |
-| `link_base_file_analyzer.account_list_common(data_path, account_list_year)` | `TaxonomyCache(cache_dir)`（年度の指定は不要。書類が参照する版を使う） |
-| `fs_tbl.get_fs_tbl(account_list_common_obj, docid, zip_file_str, temp_path_str, role_keyward_list)` | `get_fs_tbl(zip_path, taxonomy, statements=[...])` |
-| （ノートブックで書類ごとに get_fs_tbl を呼び concat） | `build_fs_table(docids, zip_dir, taxonomy, documents=..., out_path=...)` |
-| `fs_tbl.FsDataDf`・`edinet_api.EdinetResponseDf` | `schemas.FsTblDf`・`schemas.FsBigTableDf`・`schemas.DocumentListDf` |
-| `num_prep.preproc_num`・`fill_df` | `numeric.preproc_num`・`fill_df`（`pick_base_context` を追加） |
-| `text_prep.preproc_nlp(text, drop_htmp=...)` | `text.preproc_nlp(text, drop_html=...)` |
-| `text_prep.Prompt`・`GroqAPI` | `llm.Prompt`・`GroqAPI` |
-| `utils.format_taxonomi` | `linkbase.format_taxonomi` |
-
-大福帳の列の主な変更：`isTextBlock_flg`→`is_text_block`、`abstract_flg`→`is_abstract`、`AccountingStandardsDEI`→`accounting_standards`、
-`scenario`→`dimensions`（次元の名前とメンバーの JSON）、`end_date_pv`・`instant_date_pv`・`precision` は廃止、`order` は通し番号（整数）、
-ラベルがない科目は `'-'` ではなく欠損。`statement`・`label_source`・`order_path`・`layer` などの列を追加。

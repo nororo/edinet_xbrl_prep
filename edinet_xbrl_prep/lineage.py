@@ -1,18 +1,19 @@
-"""表の保存と、データリネージ JSON（``{出力データファイル名}_lin.json``）の作成。
+"""Saving tables and writing data lineage JSON (``{output file name}_lin.json``).
 
-このパッケージが書き出す表は ``save_table`` を通し、必ずリネージを付ける。リネージの項目:
+Lineage items:
 
-- file_name：ファイル名（フルパス）
-- purpose：目的
-- source_code：そのデータを作成したコード（``パッケージ/モジュール.py::関数名``）
-- date_of_source_code：そのコードの最終更新日（git で管理され変更がなければ最終コミット日、それ以外はファイルの更新日）
-- source_data_list：元データ（大量の書類などは個別に書かずその旨を書く）
-- record_num：行数
-- schema：列名
-- record_example：1行目（列名と値）
-- data_structure：データ構造の説明
-- importance_columns：重要な列とその意味
-- 追加：sha256（出力ファイル）、created_at、package_version、config（実行時の設定）
+- file_name: file name (full path)
+- purpose: purpose
+- source_code: code that created the data (``package/module.py::function``)
+- date_of_source_code: last modified date of that code (the last commit date if tracked by git and unchanged,
+  otherwise the file modification date)
+- source_data_list: source data (a large set such as many documents is described rather than listed)
+- record_num: number of rows
+- schema: column names
+- record_example: first row (column names and values)
+- data_structure: description of the data structure
+- importance_columns: important columns and their meaning
+- additional: sha256 (of the output file), created_at, package_version, config (run settings)
 """
 
 from __future__ import annotations
@@ -46,15 +47,15 @@ REQUIRED_KEYS = (
     "data_structure",
     "importance_columns",
 )
-EXAMPLE_MAX_CHARS = 300  # record_example の長い文字列（本文など）はここで切る
+EXAMPLE_MAX_CHARS = 300  # long strings in record_example (texts, etc.) are cut at this length
 
 
 class LineageError(ValueError):
-    """リネージの必須項目が欠けている、または値が不正。"""
+    """A required lineage item is missing or invalid."""
 
 
 def to_json_value(value: Any) -> Any:
-    """numpy・pandas の値を JSON に書ける値に直す。欠損は None。"""
+    """Convert numpy/pandas values to JSON-serializable values; missing values become None."""
     if isinstance(value, Mapping):
         return {str(k): to_json_value(v) for k, v in value.items()}
     if isinstance(value, list | tuple | np.ndarray):
@@ -80,7 +81,7 @@ def lineage_path(output_path: str | Path) -> Path:
 
 
 def source_code_date(file: Path) -> str:
-    """コードの最終更新日（YYYY-MM-DD）。"""
+    """Last modified date of the code (YYYY-MM-DD)."""
     def git(*args: str) -> str | None:
         try:
             out = subprocess.run(
@@ -98,7 +99,7 @@ def source_code_date(file: Path) -> str:
 
 
 def describe_source_code(source: Callable | str) -> tuple[str, str | None]:
-    """関数 → （``edinet_xbrl_prep/fs_tbl.py::build_fs_table``, 最終更新日）。文字列はそのまま。"""
+    """Function -> (``edinet_xbrl_prep/fs_tbl.py::build_fs_table``, last modified date). A string is returned as is."""
     if isinstance(source, str):
         return source, None
     file = Path(inspect.getfile(source)).resolve()
@@ -147,7 +148,7 @@ def build_lineage(
 
 
 def validate_lineage(lineage: Mapping[str, Any]) -> None:
-    """必須10項目がそろい、空でないことを確かめる。"""
+    """Check that the 10 required items are present and not empty."""
     missing = [k for k in REQUIRED_KEYS if k not in lineage]
     if missing:
         raise LineageError(f"必須項目がない: {missing}")
@@ -159,7 +160,7 @@ def validate_lineage(lineage: Mapping[str, Any]) -> None:
 
 
 def read_table(path: str | Path) -> pd.DataFrame:
-    """``save_table`` で保存した表を読む（.parquet・.csv・.jsonl）。"""
+    """Read a table saved by ``save_table`` (.parquet, .csv, .jsonl)."""
     path = Path(path)
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
@@ -182,9 +183,9 @@ def save_table(
     importance_columns: Mapping[str, str],
     run_config: Mapping[str, Any] | None = None,
 ) -> Path:
-    """表を検証して保存し、リネージ（``{名前}_lin.json``）を書く。リネージのパスを返す。
+    """Validate and save a table, write its lineage (``{name}_lin.json``) and return the lineage path.
 
-    形式は拡張子で決める（.parquet・.csv・.jsonl）。
+    The format is chosen by the extension (.parquet, .csv, .jsonl).
     """
     path = Path(path)
     if schema is not None:

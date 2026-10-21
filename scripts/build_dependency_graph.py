@@ -1,10 +1,10 @@
-"""パッケージのモジュール・関数の依存グラフ（インタラクティブな HTML）と指標（JSON）を作る。
+"""パッケージのモジュール・関数の依存グラフ（インタラクティブな HTML）と指標（JSON）を ../docs/ に作る。
 
     uv run python scripts/build_dependency_graph.py
     # リファクタリング前（main ブランチ）のグラフ
     git archive main edinet_xbrl_prep | tar -x -C /tmp/before
     uv run python scripts/build_dependency_graph.py --src /tmp/before/edinet_xbrl_prep \
-        --out docs/dependency_graph_before.html --label before --title "リファクタリング前（main）"
+        --out dependency_graph_before.html --label before --title "リファクタリング前（main）"
 
 ソースコードを構文解析（ast）して、次を辺にする。
 - モジュール → モジュール：パッケージ内の import
@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# 生成物はリポジトリに入れないため、リポジトリの外（クローンしたディレクトリの隣の docs/）に書く
+DOCS_DIR = ROOT.parent / "docs"
 PACKAGE = "edinet_xbrl_prep"
 VIS_NETWORK = "https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js"
 # 層（数字が大きいほど上）。上の層から下の層への依存だけを許す
@@ -324,11 +326,13 @@ refresh();
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--src", type=Path, default=ROOT / PACKAGE)
-    parser.add_argument("--out", type=Path, default=ROOT / "docs" / "dependency_graph.html")
-    parser.add_argument("--metrics", type=Path, default=ROOT / "docs" / "graph_metrics.json")
+    parser.add_argument("--out-dir", type=Path, default=DOCS_DIR, help="出力先（既定：リポジトリの外の ../docs）")
+    parser.add_argument("--out", default="dependency_graph.html", help="--out-dir からのファイル名")
+    parser.add_argument("--metrics", default="graph_metrics.json", help="--out-dir からのファイル名")
     parser.add_argument("--label", default="after")
     parser.add_argument("--title", default="edinet_xbrl_prep の依存関係グラフ")
     args = parser.parse_args()
+    args.out, args.metrics = args.out_dir / args.out, args.out_dir / args.metrics
     modules = collect(args.src)
     edges = resolve_edges(modules)
     stats = metrics(modules, edges, args.label)

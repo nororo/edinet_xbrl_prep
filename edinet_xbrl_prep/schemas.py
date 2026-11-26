@@ -16,7 +16,13 @@ DOCID = r"^S1[0-9A-Z]{6}$"
 
 
 class DocumentListDf(pa.DataFrameModel):
-    """Result of the document list API (v2, type=2). One row = one document (one entry of a day's list).
+    """Result of the document list API (v2, type=2). One row = one entry of a day's list.
+
+    The same ``docID`` can appear more than once, on the same day or on different days: a correction of
+    document information by Local Finance Bureau staff adds a row (``docInfoEditStatus`` = 1) to the list of
+    the day of the correction, while the original row stays in the list of the submission day (marked 2, or
+    left as 0), and the API can repeat a document whose inspection period has ended. Entries are therefore
+    identified by (``date``, ``seqNumber``), not by ``docID``. ``select_reports`` returns one row per document.
 
     Column names follow the API fields (see the EDINET API specification, version 2).
     ``access_date`` is the date of retrieval.
@@ -59,9 +65,9 @@ class DocumentListDf(pa.DataFrameModel):
     sector_label_17: Optional[Series[String]] = pa.Field(nullable=True)
 
     @pa.dataframe_check
-    def unique_document(cls, df: pd.DataFrame) -> bool:
-        """Unique by (requested date, document ID)."""
-        return not df.duplicated(["date", "docID"]).any()
+    def unique_entry(cls, df: pd.DataFrame) -> bool:
+        """Unique by (requested date, sequence number in that day's list)."""
+        return not df.duplicated(["date", "seqNumber"]).any()
 
     class Config:
         strict = True

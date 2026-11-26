@@ -41,7 +41,7 @@ yuho = add_tse_sector(select_reports(documents), read_tse_sector())
 save_document_list(
     yuho,
     DATA_PATH / "yuho_documents.parquet",  # yuho_documents_lin.json（リネージ）も書く
-    source_data_list=["EDINET 書類一覧 API（2024-06-15〜2024-06-30）", "東証 上場銘柄一覧（data_j.xls）"],
+    source_data_list=["EDINET 書類一覧 API（2024-06-15〜2024-06-30）", "東証 上場銘柄一覧（data_j.xlsx）"],
 )
 target = yuho.query("sector_label_33 == '食料品'").head(30)
 print("業種が食料品の有価証券報告書数:", len(target))

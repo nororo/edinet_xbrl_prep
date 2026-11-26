@@ -113,7 +113,7 @@ def test_fetch_document_list_failures_are_recorded_without_key():
     assert KEY not in error.message and "***" in error.message
 
 
-@pytest.mark.target("edinet_api.documents_frame", "edinet_api.save_day_results", "edinet_api.load_day_results", "schemas.DocumentListDf.unique_document")
+@pytest.mark.target("edinet_api.documents_frame", "edinet_api.save_day_results", "edinet_api.load_day_results", "schemas.DocumentListDf.unique_entry")
 def test_documents_frame_roundtrip(tmp_path):
     """成功した日の書類を1行ずつの表にする（空文字は欠損）。JSON Lines に保存して読み直せる。"""
     results = [
@@ -127,8 +127,23 @@ def test_documents_frame_roundtrip(tmp_path):
     assert frame.fundCode.isna().all()
     assert edinet_api.failed_days(loaded) == ["2024-06-21"]
     DocumentListDf.validate(frame)
-    with pytest.raises(Exception, match="unique_document"):
+    with pytest.raises(Exception, match="unique_entry"):
         DocumentListDf.validate(pd.concat([frame, frame]))
+
+
+@pytest.mark.target("edinet_api.documents_frame", "edinet_api.select_reports", "schemas.DocumentListDf.unique_entry")
+def test_documents_frame_keeps_repeated_docid():
+    """同じ日の一覧に同じ docID が2回出ても、すべての行を表に残す（書類情報の修正前後の行、閲覧期間が終わり書類情報が空の行）。"""
+    docs = [
+        _doc("S1000001", 1, edit="2"), _doc("S1000001", 2, edit="1"),
+        _doc("S1000002", 3, doc_type="", form=""), _doc("S1000002", 4, doc_type="", form=""),
+    ]
+    frame = edinet_api.documents_frame([DayResult("2024-06-20", "success", "2024-07-01", docs)])
+    assert frame.docID.tolist() == ["S1000001", "S1000001", "S1000002", "S1000002"]
+    assert frame.seqNumber.tolist() == [1, 2, 3, 4]
+    selected = edinet_api.select_reports(frame)
+    assert selected.docID.tolist() == ["S1000001"]
+    assert selected.docInfoEditStatus.tolist() == ["1"]
 
 
 @pytest.mark.target("edinet_api.select_reports")
@@ -143,6 +158,23 @@ def test_select_reports():
     assert edinet_api.select_reports(frame).docID.tolist() == ["S1000001"]
     both = edinet_api.select_reports(frame, ["annual", "amended_annual"])
     assert both.docID.tolist() == ["S1000001", "S1000002"]
+
+
+@pytest.mark.target("edinet_api.select_reports")
+def test_select_reports_keeps_latest_entry_of_each_document():
+    """別の日に書類情報が修正された書類は、いちばん新しい行（修正後の行）だけを残す。入力の行の順は保つ。"""
+    days = [
+        DayResult("2024-06-20", "success", "2024-07-01", [_doc("S1000001", 1), _doc("S1000002", 2)]),
+        DayResult("2024-06-21", "success", "2024-07-01", [_doc("S1000003", 1), _doc("S1000001", 2, edit="1")]),
+    ]
+    frame = edinet_api.documents_frame(days)
+    selected = edinet_api.select_reports(frame)
+    assert selected.docID.tolist() == ["S1000002", "S1000003", "S1000001"]
+    assert selected.date.tolist() == ["2024-06-20", "2024-06-21", "2024-06-21"]
+    assert selected.docInfoEditStatus.tolist() == ["0", "0", "1"]
+    reversed_order = edinet_api.select_reports(frame.iloc[::-1])
+    assert reversed_order.docID.tolist() == ["S1000001", "S1000003", "S1000002"]
+    assert reversed_order.docInfoEditStatus.tolist() == ["1", "0", "0"]
 
 
 @pytest.mark.target("edinet_api.read_tse_sector", "edinet_api.add_tse_sector")

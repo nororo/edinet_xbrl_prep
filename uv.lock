@@ -468,6 +468,7 @@ source = { editable = "." }
 dependencies = [
     { name = "arelle-release" },
     { name = "lxml" },
+    { name = "openpyxl" },
     { name = "pandas" },
     { name = "pandera" },
     { name = "pyarrow" },
@@ -506,6 +507,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=5" },
     { name = "matplotlib", marker = "extra == 'analysis'", specifier = ">=3.9" },
     { name = "matplotlib-fontja", marker = "extra == 'analysis'", specifier = ">=1.0" },
+    { name = "openpyxl", specifier = ">=3.1" },
     { name = "pandas", specifier = ">=2.2,<3" },
     { name = "pandera", specifier = ">=0.24" },
     { name = "pyarrow", specifier = ">=17" },

@@ -13,7 +13,8 @@ dependencies = [
     "lxml>=5",
     "arelle-release>=2.30",
     "tqdm>=4.66",
-    "xlrd>=2.0.1",          # 東証の業種区分（.xls）の読み込み
+    "openpyxl>=3.1",        # 東証の業種区分（.xlsx）の読み込み
+    "xlrd>=2.0.1",          # 以前の形式（.xls）で保存した東証の業種区分の読み込み
 ]
 
 [project.optional-dependencies]

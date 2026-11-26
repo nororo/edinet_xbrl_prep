@@ -24,7 +24,7 @@ API_BASE = "https://api.edinet-fsa.go.jp/api/v2"
 ENV_API_KEY = "EDINET_API_KEY"
 RETRY_STATUS = (429, 500, 502, 503, 504)
 # TSE list of listed companies (with industry classifications)
-TSE_LISTED_COMPANIES_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+TSE_LISTED_COMPANIES_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx"
 
 # report kind -> (ordinance code, form code, document type code)
 REPORT_KINDS = {
@@ -147,7 +147,10 @@ def load_day_results(path: str | Path) -> list[DayResult]:
 
 
 def documents_frame(results: Iterable[DayResult]) -> pd.DataFrame:
-    """Turn the lists of successful days into a table with one row per document (``DocumentListDf``)."""
+    """Turn the lists of successful days into a table with one row per list entry (``DocumentListDf``).
+
+    All entries are kept, including a ``docID`` that the API returns more than once (see ``DocumentListDf``).
+    """
     rows = [
         {**{c: item.get(c) for c in DOCUMENT_COLUMNS}, "date": r.date, "access_date": r.access_date}
         for r in results
@@ -169,6 +172,11 @@ def select_reports(documents: pd.DataFrame, kinds: Iterable[str] = ("annual",)) 
 
     Rows related to withdrawal (``withdrawalStatus`` other than 0) and the pre-correction rows of documents
     corrected by Local Finance Bureau staff (``docInfoEditStatus`` = 2) are excluded.
+
+    The result has one row per document, in the order of the input. A document corrected on a later day appears
+    again in the list of that day (``docInfoEditStatus`` = 1) while its original entry may be left unmarked
+    (= 0), so only the latest entry of each ``docID`` (by ``date``, then ``seqNumber``) is kept. The ``date``
+    of that entry is the day of the correction; the submission date is in ``submitDateTime``.
     """
     selected = pd.Series(False, index=documents.index)
     for kind in kinds:
@@ -179,11 +187,13 @@ def select_reports(documents: pd.DataFrame, kinds: Iterable[str] = ("annual",)) 
             & (documents.docTypeCode == doc_type)
         )
     selected &= (documents.withdrawalStatus == "0") & (documents.docInfoEditStatus != "2")
-    return documents[selected].reset_index(drop=True)
+    reports = documents[selected].reset_index(drop=True)
+    latest = reports.sort_values(["date", "seqNumber"]).drop_duplicates("docID", keep="last").index
+    return reports.loc[latest.sort_values()].reset_index(drop=True)
 
 
 def read_tse_sector(source: str | Path = TSE_LISTED_COMPANIES_URL) -> pd.DataFrame:
-    """Read securities codes (5 digits) and industry classifications from the TSE list (URL or local .xls)."""
+    """Read securities codes (5 digits) and industry classifications from the TSE list (URL or local .xlsx / .xls)."""
     table = pd.read_excel(source, header=0, dtype=str)
     table = table.rename(
         columns={
@@ -224,7 +234,7 @@ def save_document_list(
         source_code=save_document_list,
         source_data_list=list(source_data_list),
         data_structure=(
-            "1行＝1書類（書類一覧 API の1件）。主キー：date, docID。"
+            "1行＝書類一覧 API の1件。主キー：date, seqNumber（同じ docID が複数行になることがある）。"
             f"提出日の範囲：{dates.min() if len(dates) else '-'}〜{dates.max() if len(dates) else '-'}"
         ),
         importance_columns={

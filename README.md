@@ -32,7 +32,7 @@ DATA = Path("data")
 
 # 1. 書類一覧 API で書類一覧を取得する（開始日・終了日を含む）。API キーは引数か環境変数 EDINET_API_KEY
 results = fetch_document_lists("2024-06-15", "2024-06-30", api_key=your_api_key)
-documents = documents_frame(results)                                   # 1行＝1書類（DocumentListDf）
+documents = documents_frame(results)                                   # 1行＝書類一覧の1件（DocumentListDf）
 yuho = add_tse_sector(select_reports(documents), read_tse_sector())    # 有価証券報告書＋東証の業種区分
 save_document_list(yuho, DATA / "yuho_documents.parquet", source_data_list=["EDINET 書類一覧 API"])
 
